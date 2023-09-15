@@ -236,12 +236,12 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
                 // plot text
                 int banner_height = (double)100 * MATCH_IMAGE_SCALE;
                 cv::Mat notation(banner_height, thumbnail.size().width + gap + thumbnail.size().width, CV_8UC3, cv::Scalar(255, 255, 255));
-                putText(notation, "current frame: " + to_string(index), 
-                        cv::Point2f(5, banner_height - 5), CV_FONT_HERSHEY_SIMPLEX, 
-                        MATCH_IMAGE_SCALE*2, cv::Scalar(255), 2);
-                putText(notation, "previous frame: " + to_string(old_kf->index), 
-                        cv::Point2f(5 + thumbnail.size().width + gap, banner_height - 5), CV_FONT_HERSHEY_SIMPLEX, 
-                        MATCH_IMAGE_SCALE*2, cv::Scalar(255), 2);
+                /* putText(notation, "current frame: " + to_string(index), */ 
+                /*         cv::Point2f(5, banner_height - 5), CV_FONT_HERSHEY_SIMPLEX, */ 
+                /*         MATCH_IMAGE_SCALE*2, cv::Scalar(255), 2); */
+                /* putText(notation, "previous frame: " + to_string(old_kf->index), */ 
+                /*         cv::Point2f(5 + thumbnail.size().width + gap, banner_height - 5), CV_FONT_HERSHEY_SIMPLEX, */ 
+                /*         MATCH_IMAGE_SCALE*2, cv::Scalar(255), 2); */
                 cv::vconcat(notation, loop_match_img, loop_match_img);
                 // publish matched image
     	    	sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", loop_match_img).toImageMsg();

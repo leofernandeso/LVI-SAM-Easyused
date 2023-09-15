@@ -30,6 +30,8 @@
 #include <pcl/filters/crop_box.h> 
 #include <pcl_conversions/pcl_conversions.h>
 
+#include <opencv2/core.hpp>
+
 #include <tf/LinearMath/Quaternion.h>
 #include <tf/transform_listener.h>
 #include <tf/transform_datatypes.h>
