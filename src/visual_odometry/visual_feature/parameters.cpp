@@ -1,6 +1,7 @@
 #include "parameters.h"
 
 std::string IMAGE_TOPIC;
+std::string RIGHT_IMAGE_TOPIC;
 std::string IMU_TOPIC;
 std::string POINT_CLOUD_TOPIC;
 std::string PROJECT_NAME;
@@ -56,6 +57,7 @@ void readParameters(ros::NodeHandle &n)
 
     // sensor topics
     fsSettings["image_topic"]       >> IMAGE_TOPIC;
+    fsSettings["right_image_topic"]       >> RIGHT_IMAGE_TOPIC;
     fsSettings["imu_topic"]         >> IMU_TOPIC;
     fsSettings["point_cloud_topic"] >> POINT_CLOUD_TOPIC;
 

@@ -65,6 +65,7 @@ const int NUM_OF_CAM = 1;
 
 extern std::string PROJECT_NAME;
 extern std::string IMAGE_TOPIC;
+extern std::string RIGHT_IMAGE_TOPIC;
 extern std::string IMU_TOPIC;
 extern std::string POINT_CLOUD_TOPIC;
 

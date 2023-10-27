@@ -5,6 +5,7 @@
 #define SKIP_FIRST_CNT 10
 
 queue<sensor_msgs::ImageConstPtr>      image_buf;
+queue<sensor_msgs::ImageConstPtr>      right_image_buf;
 queue<sensor_msgs::PointCloudConstPtr> point_buf;
 queue<nav_msgs::Odometry::ConstPtr>    pose_buf;
 
@@ -23,6 +24,7 @@ Eigen::Matrix3d qic;
 
 std::string PROJECT_NAME;
 std::string IMAGE_TOPIC;
+std::string RIGHT_IMAGE_TOPIC;
 
 int DEBUG_IMAGE;
 int LOOP_CLOSURE;

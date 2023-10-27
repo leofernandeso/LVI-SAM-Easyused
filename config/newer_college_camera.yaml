@@ -4,9 +4,8 @@
 project_name: "lvi_sam"
 
 #common parameters
-imu_topic: "/imu_raw"
-image_topic: "/kitti/camera_gray_left/image_raw"
-right_image_topic: "/kitti/camera_gray_right/image_raw"
+imu_topic: /alphasense_driver_ros/imu
+image_topic: /alphasense_driver_ros/cam0/compressed
 point_cloud_topic: "lvi_sam/lidar/deskew/cloud_deskewed"
 
 # Lidar Params
@@ -17,20 +16,20 @@ align_camera_lidar_estimation: 1 # align camera and lidar estimation for visuali
 #camera calibration 
 model_type: PINHOLE
 camera_name: cam1
-image_width: 1226
-image_height: 370
+image_width: 720
+image_height: 540
 distortion_parameters:
-  k1: 0.0
-  k2: 0.0
-  p1: 0.0
-  p2: 0.0
+  k1: -0.036026978821875784
+  k2: -0.0057694799589566225
+  p1: 0.0013935274265662804
+  p2: -0.00021596020882055515
 projection_parameters:
-  fx: 7.070912e+02
-  fy: 7.070912e+02
-  cx: 6.018873e+02
-  cy: 1.831104e+02
+  fx: 352.61035231977274
+  fy: 351.80795509839817
+  cx: 355.28618305647717
+  cy: 262.1618717187695
 
-#imu parameters       The more accurate parameters you provide, the worse performance
+# Imu parameters (the dataset doesn't provide these params, apparently)
 acc_n: 0.02         # accelerometer measurement noise standard deviation.
 gyr_n: 0.01         # gyroscope measurement noise standard deviation.
 acc_w: 0.002        # accelerometer bias random work noise standard deviation.
@@ -46,16 +45,16 @@ extrinsicRotation: !!opencv-matrix
    rows: 3
    cols: 3
    dt: d
-   data: [-0.00108863, -0.00851207,  0.9999631,
-         -0.9999764, -0.00677767, -0.0011463,
-          0.00678718, -0.99994073, -0.0085044]   
+   data: [9.81707941e-04, -2.42422170e-03, 9.99996580e-01,
+          9.99942776e-01,  1.06550983e-02, -9.55824713e-04,
+         -1.06527447e-02,  9.99940294e-01,  2.43454317e-03]   
 
 #Translation from camera frame to imu frame, imu^T_cam
 extrinsicTranslation: !!opencv-matrix
    rows: 3
    cols: 1
    dt: d
-   data: [1.14389871, -0.31271847,  0.72654605]
+   data: [5.06216565e-02, 4.63975663e-02, -9.25949430e-03]
 
 #feature traker paprameters
 max_cnt: 150            # max feature number in feature tracking
