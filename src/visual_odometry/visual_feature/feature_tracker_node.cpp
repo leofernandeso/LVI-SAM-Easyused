@@ -1,5 +1,4 @@
 #include "feature_tracker.h"
-#include "sensor_msgs/Image.h"
 
 #define SHOW_UNDISTORTION 0
 
@@ -30,30 +29,7 @@ bool first_image_flag = true;
 double last_image_time = 0;
 bool init_pub = 0;
 
-cv_bridge::CvImagePtr right_img_ptr;
 
-void right_img_callback(const sensor_msgs::ImageConstPtr& img_msg) {
-
-  cv_bridge::CvImagePtr ptr;
-  if (img_msg->encoding == "8UC1")
-  {
-      sensor_msgs::Image img;
-      img.header = img_msg->header;
-      img.height = img_msg->height;
-      img.width = img_msg->width;
-      img.is_bigendian = img_msg->is_bigendian;
-      img.step = img_msg->step;
-      img.data = img_msg->data;
-      img.encoding = "mono8";
-      ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
-  }
-  else
-      ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
-
-  right_img_ptr = ptr;
-
-  ROS_WARN("Got right image!");
-}
 
 void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 {
@@ -113,53 +89,11 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 
     cv::Mat show_img = ptr->image;
     TicToc t_r;
-    std::vector<size_t> ids;
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
-        if (i != 1 || !STEREO_TRACK) {
+        ROS_DEBUG("processing camera %d", i);
+        if (i != 1 || !STEREO_TRACK)
             trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)), cur_img_time);
-            auto current_left_pts = trackerData[i].cur_pts;
-
-            auto right_img = right_img_ptr->image;
-            std::vector<cv::Point2f> right_pts;
-            std::vector<uchar> status;
-            std::vector<float> err;
-            cv::calcOpticalFlowPyrLK(show_img, right_img, current_left_pts, right_pts, status, err, cv::Size(21, 21), 3);
-
-            /* cv::Mat img_clone = show_img.clone(); */
-            /* for (int j = 0; j < current_left_pts.size(); j++) { */
-            /*     cv::circle(img_clone, current_left_pts[j], 4, cv::Scalar(0, 255, 0), 4); */
-            /* } */
-            /* cv::imshow("left", img_clone); */
-            /* cv::waitKey(1); */
-
-
-            /* for (int j = 0; j < right_pts.size(); j++) { */
-            /*     cv::circle(right_img, right_pts[j], 4, cv::Scalar(0, 255, 0), 4); */
-            /* } */
-            /* cv::imshow("right", right_img); */
-            /* cv::waitKey(1); */
-
-            // filter based on epipolar constraint (check if left and right points are on the same horizontal line)
-            std::vector<cv::Point2f> filtered_left_pts;
-            std::vector<cv::Point2f> filtered_right_pts;
-            for (int j = 0; j < current_left_pts.size(); j++) {
-                if (abs(current_left_pts[j].y - right_pts[j].y) < 1) {
-                    filtered_left_pts.push_back(current_left_pts[j]);
-                    filtered_right_pts.push_back(right_pts[j]);
-                    ids.push_back(j);
-                }
-            }
-            
-            // Show result for filtered left image
-            /* cv::Mat img_clone_filtered = show_img.clone(); */
-            /* for (int j = 0; j < filtered_left_pts.size(); j++) { */
-            /*     cv::circle(img_clone_filtered, filtered_left_pts[j], 4, cv::Scalar(0, 0, 255), 4); */
-            /* } */
-            /* cv::imshow("left filtered", img_clone_filtered); */
-            /* cv::waitKey(1); */
-            
-        }
         else
         {
             if (EQUALIZE)
@@ -204,8 +138,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         {
             auto &un_pts = trackerData[i].cur_un_pts;
             auto &cur_pts = trackerData[i].cur_pts;
-            /* auto &ids = trackerData[i].ids; */
-            ROS_WARN("ids size: %d", ids.size());
+            auto &ids = trackerData[i].ids;
             auto &pts_velocity = trackerData[i].pts_velocity;
             for (unsigned int j = 0; j < ids.size(); j++)
             {
@@ -240,7 +173,6 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         *depth_cloud_temp = *depthCloud;
         mtx_lidar.unlock();
 
-        std::cout << "Estimating depth for " << feature_points->points.size() << " points" << std::endl;
         sensor_msgs::ChannelFloat32 depth_of_points = depthRegister->get_depth(img_msg->header.stamp, show_img, depth_cloud_temp, trackerData[0].m_camera, feature_points->points);
         feature_points->channels.push_back(depth_of_points);
         
@@ -264,7 +196,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                 cv::Mat tmp_img = stereo_img.rowRange(i * ROW, (i + 1) * ROW);
                 cv::cvtColor(show_img, tmp_img, CV_GRAY2RGB);
 
-                for (unsigned int j = 0; j < ids.size(); j++)
+                for (unsigned int j = 0; j < trackerData[i].cur_pts.size(); j++)
                 {
                     if (SHOW_TRACK)
                     {
@@ -450,9 +382,7 @@ int main(int argc, char **argv)
     depthRegister = new DepthRegister(n);
     
     // subscriber to image and lidar
-    ROS_WARN("Right image topic: %s", RIGHT_IMAGE_TOPIC.c_str());
     ros::Subscriber sub_img   = n.subscribe(IMAGE_TOPIC,       5,    img_callback);
-    ros::Subscriber sub_image_right = n.subscribe(RIGHT_IMAGE_TOPIC, 5, right_img_callback);
     ros::Subscriber sub_lidar = n.subscribe(POINT_CLOUD_TOPIC, 5,    lidar_callback);
     if (!USE_LIDAR)
         sub_lidar.shutdown();
