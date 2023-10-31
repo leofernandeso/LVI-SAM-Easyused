@@ -140,13 +140,22 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
             /* cv::imshow("right", right_img); */
             /* cv::waitKey(1); */
 
-            // filter based on epipolar constraint (check if left and right points are on the same horizontal line)
-            std::vector<cv::Point2f> filtered_left_pts;
-            std::vector<cv::Point2f> filtered_right_pts;
+            // computing epipolar distance between matches
+            std::vector<float> epipolar_distances;
             for (int j = 0; j < current_left_pts.size(); j++) {
-                if (abs(current_left_pts[j].y - right_pts[j].y) < 1) {
-                    filtered_left_pts.push_back(current_left_pts[j]);
-                    filtered_right_pts.push_back(right_pts[j]);
+                float epipolar_distance = abs(current_left_pts[j].y - right_pts[j].y);
+                epipolar_distances.push_back(epipolar_distance);
+            }
+
+            float mean_epipolar_distance = std::accumulate(epipolar_distances.begin(), epipolar_distances.end(), 0.0) / epipolar_distances.size();
+            float std_epipolar_distance = 0.0;
+            for (int j = 0; j < epipolar_distances.size(); j++) {
+                std_epipolar_distance += pow(epipolar_distances[j] - mean_epipolar_distance, 2);
+            }
+            std_epipolar_distance = sqrt(std_epipolar_distance / epipolar_distances.size());
+            
+            for (int j = 0; j < current_left_pts.size(); j++) {
+                if (abs(current_left_pts[j].y - right_pts[j].y) < mean_epipolar_distance + 2 * std_epipolar_distance) {
                     ids.push_back(j);
                 }
             }
