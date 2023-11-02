@@ -22,7 +22,7 @@ Eigen::Vector3d tic;
 Eigen::Matrix3d qic;
 
 std::string PROJECT_NAME;
-std::string IMAGE_TOPIC;
+std::string LEFT_IMAGE_TOPIC;
 
 int DEBUG_IMAGE;
 int LOOP_CLOSURE;
@@ -266,7 +266,7 @@ int main(int argc, char **argv)
 
     // Initialize global params
     fsSettings["project_name"] >> PROJECT_NAME;  
-    fsSettings["image_topic"]  >> IMAGE_TOPIC;  
+    fsSettings["left_image_topic"]  >> LEFT_IMAGE_TOPIC;  
     fsSettings["loop_closure"] >> LOOP_CLOSURE;
     fsSettings["skip_time"]    >> SKIP_TIME;
     fsSettings["skip_dist"]    >> SKIP_DIST;
@@ -293,7 +293,7 @@ int main(int argc, char **argv)
         m_camera = camodocal::CameraFactory::instance()->generateCameraFromYamlFile(config_file.c_str());
     }
 
-    ros::Subscriber sub_image     = n.subscribe(IMAGE_TOPIC, 30, image_callback);
+    ros::Subscriber sub_image     = n.subscribe(LEFT_IMAGE_TOPIC, 30, image_callback);
     ros::Subscriber sub_pose      = n.subscribe(PROJECT_NAME + "/vins/odometry/keyframe_pose",  3, pose_callback);
     ros::Subscriber sub_point     = n.subscribe(PROJECT_NAME + "/vins/odometry/keyframe_point", 3, point_callback);
     ros::Subscriber sub_extrinsic = n.subscribe(PROJECT_NAME + "/vins/odometry/extrinsic",      3, extrinsic_callback);

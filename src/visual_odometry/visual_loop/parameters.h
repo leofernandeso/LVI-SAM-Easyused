@@ -76,7 +76,7 @@ extern Eigen::Vector3d tic;
 extern Eigen::Matrix3d qic;
 
 extern string PROJECT_NAME;
-extern string IMAGE_TOPIC;
+extern string LEFT_IMAGE_TOPIC;
 
 extern int DEBUG_IMAGE;
 extern int LOOP_CLOSURE;
