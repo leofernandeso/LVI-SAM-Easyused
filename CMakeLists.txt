@@ -76,6 +76,7 @@ catkin_package(
 message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
 
 include_directories(
+    include
     ${catkin_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
@@ -112,12 +113,19 @@ file(GLOB visual_loop_files
     "src/visual_odometry/visual_loop/ThirdParty/DVision/*.cpp"
     "src/visual_odometry/visual_feature/camera_models/*.cc"
 )
+
+# Kitti dataset wrapper
+add_library(kitti_dataset STATIC src/datasets/kitti.cpp)
+target_link_libraries(kitti_dataset ${PCL_LIBRARIES} ${OpenCV_LIBS})
+
 # Visual Feature Tracker
 add_executable(${PROJECT_NAME}_visual_feature ${visual_feature_files})
-target_link_libraries(${PROJECT_NAME}_visual_feature ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}_visual_feature ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} kitti_dataset)
+
 # Visual Odometry
 add_executable(${PROJECT_NAME}_visual_odometry ${visual_odometry_files})
 target_link_libraries(${PROJECT_NAME}_visual_odometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES}) 
+
 # Visual Lopp
 add_executable(${PROJECT_NAME}_visual_loop ${visual_loop_files})
 target_link_libraries(${PROJECT_NAME}_visual_loop ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES}) 

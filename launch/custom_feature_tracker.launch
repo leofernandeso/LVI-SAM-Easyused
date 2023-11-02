@@ -1,0 +1,12 @@
+<launch>
+ 
+  <rosparam file="$(find lvi_sam)/config/kitti_custom/2011_09_30/KITTI_lidar.yaml" command="load" />
+
+	<!-- VINS config -->
+	<param name="vins_config_file" type="string" value="$(find lvi_sam)/config/kitti_custom/2011_09_30/KITTI_camera.yaml" />
+
+  <!--- Robot State TF -->
+  <include file="$(find lvi_sam)/launch/include/module_robot_state_publisher.launch" />
+  <!--- SAM -->
+  <include file="$(find lvi_sam)/launch/include/module_sam.launch" />
+</launch>

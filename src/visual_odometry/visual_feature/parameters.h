@@ -68,6 +68,7 @@ extern std::string IMAGE_TOPIC;
 extern std::string RIGHT_IMAGE_TOPIC;
 extern std::string IMU_TOPIC;
 extern std::string POINT_CLOUD_TOPIC;
+extern std::string RAW_SEQUENCE_PATH;
 
 extern int USE_LIDAR;
 extern int LIDAR_SKIP;

@@ -5,6 +5,7 @@ std::string RIGHT_IMAGE_TOPIC;
 std::string IMU_TOPIC;
 std::string POINT_CLOUD_TOPIC;
 std::string PROJECT_NAME;
+std::string RAW_SEQUENCE_PATH;
 
 std::vector<std::string> CAM_NAMES;
 std::string FISHEYE_MASK;
@@ -60,6 +61,7 @@ void readParameters(ros::NodeHandle &n)
     fsSettings["right_image_topic"]       >> RIGHT_IMAGE_TOPIC;
     fsSettings["imu_topic"]         >> IMU_TOPIC;
     fsSettings["point_cloud_topic"] >> POINT_CLOUD_TOPIC;
+    fsSettings["raw_sequence_path"] >> RAW_SEQUENCE_PATH;
 
     // lidar configurations
     fsSettings["use_lidar"] >> USE_LIDAR;
