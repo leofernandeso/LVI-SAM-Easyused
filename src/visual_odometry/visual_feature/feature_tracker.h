@@ -81,11 +81,6 @@ public:
 
     DepthRegister(ros::NodeHandle n_in) : n(n_in)
     {
-        // messages for RVIZ visualization
-        pub_depth_feature = n.advertise<sensor_msgs::PointCloud2>(PROJECT_NAME + "/vins/depth/depth_feature", 5);
-        pub_depth_image = n.advertise<sensor_msgs::Image>(PROJECT_NAME + "/vins/depth/depth_image", 5);
-        pub_depth_cloud = n.advertise<sensor_msgs::PointCloud2>(PROJECT_NAME + "/vins/depth/depth_cloud", 5);
-
         pointsArray.resize(num_bins);
         for (int i = 0; i < num_bins; ++i)
             pointsArray[i].resize(num_bins);
@@ -109,14 +104,8 @@ public:
         try
         {
 
-        #if IF_OFFICIAL
-            listener.waitForTransform("vins_world", "vins_body_ros", stamp_cur, ros::Duration(0.01));
-            listener.lookupTransform("vins_world", "vins_body_ros", stamp_cur, transform);
-        #else
-            //? mod: 直接监听vins_camFLU坐标系在世界坐标系下的表示，这样就把VIO的动态外参包括进去了
-            listener.waitForTransform("vins_world", "vins_cameraFLU", stamp_cur, ros::Duration(0.01));
-            listener.lookupTransform("vins_world", "vins_cameraFLU", stamp_cur, transform);
-        #endif
+          listener.waitForTransform("vins_world", "vins_cameraFLU", stamp_cur, ros::Duration(0.01));
+          listener.lookupTransform("vins_world", "vins_cameraFLU", stamp_cur, transform);
         }
         catch (tf::TransformException ex)
         {
@@ -193,12 +182,6 @@ public:
         }
         *depth_cloud_local = *depth_cloud_local_filter2;
 
-#if IF_OFFICIAL
-        publishCloud(&pub_depth_cloud, depth_cloud_local, stamp_cur, "vins_body_ros");
-#else
-        //? mod: 发布点云的坐标系
-        publishCloud(&pub_depth_cloud, depth_cloud_local, stamp_cur, "vins_cameraFLU");
-#endif
 
         // 5. project depth cloud onto a unit sphere
         pcl::PointCloud<PointType>::Ptr depth_cloud_unit_sphere(new pcl::PointCloud<PointType>());
@@ -274,57 +257,11 @@ public:
             }
         }
 
-        // visualize features in cartesian 3d space (including the feature without depth (default 1))
-#if IF_OFFICIAL
-        publishCloud(&pub_depth_feature, features_3d_sphere, stamp_cur, "vins_body_ros");
-#else
-        //? mod：发布点云坐标系
-        publishCloud(&pub_depth_feature, features_3d_sphere, stamp_cur, "vins_cameraFLU");
-#endif
-
         // update depth value for return
         for (int i = 0; i < (int)features_3d_sphere->size(); ++i)
         {
             if (features_3d_sphere->points[i].intensity > 3.0)
                 depth_of_point.values[i] = features_3d_sphere->points[i].intensity;
-        }
-
-        // visualization project points on image for visualization (it's slow!)
-        if (pub_depth_image.getNumSubscribers() != 0)
-        {
-            vector<cv::Point2f> points_2d;
-            vector<float> points_distance;
-
-            for (int i = 0; i < (int)depth_cloud_local->size(); ++i)
-            {
-                // convert points from 3D to 2D
-                Eigen::Vector3d p_3d(-depth_cloud_local->points[i].y,
-                                     -depth_cloud_local->points[i].z,
-                                     depth_cloud_local->points[i].x);
-                Eigen::Vector2d p_2d;
-                camera_model->spaceToPlane(p_3d, p_2d);
-
-                points_2d.push_back(cv::Point2f(p_2d(0), p_2d(1)));
-                points_distance.push_back(pointDistance(depth_cloud_local->points[i]));
-            }
-
-            cv::Mat showImage, circleImage;
-            cv::cvtColor(imageCur, showImage, cv::COLOR_GRAY2RGB);
-            circleImage = showImage.clone();
-            for (int i = 0; i < (int)points_2d.size(); ++i)
-            {
-                float r, g, b;
-                getColor(points_distance[i], 50.0, r, g, b);
-                cv::circle(circleImage, points_2d[i], 0, cv::Scalar(r, g, b), 5);
-            }
-            cv::addWeighted(showImage, 1.0, circleImage, 0.7, 0, showImage); // blend camera image and circle image
-
-            cv_bridge::CvImage bridge;
-            bridge.image = showImage;
-            bridge.encoding = "rgb8";
-            sensor_msgs::Image::Ptr imageShowPointer = bridge.toImageMsg();
-            imageShowPointer->header.stamp = stamp_cur;
-            pub_depth_image.publish(imageShowPointer);
         }
 
         return depth_of_point;

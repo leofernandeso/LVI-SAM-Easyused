@@ -108,16 +108,6 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time) {
     reduceVector(track_cnt, status);
     ROS_DEBUG("temporal optical flow costs: %fms", t_o.toc());
 
-    // Show features
-    for (unsigned int i = 0; i < forw_pts.size(); i++) {
-      if (status[i] == 1) {
-        cv::circle(forw_img, forw_pts[i], 2, cv::Scalar(0, 0, 255), 2);
-        cv::circle(forw_img, forw_pts[i], 10, cv::Scalar(0, 255, 0));
-      }
-    }
-    cv::imshow("features", forw_img);
-    cv::waitKey(0);
-
   }
 
   for (auto &n : track_cnt)
