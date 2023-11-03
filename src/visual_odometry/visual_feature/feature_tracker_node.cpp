@@ -2,6 +2,7 @@
 
 #include "feature_tracker.h"
 #include "ros/console_backend.h"
+#include "ros/node_handle.h"
 #include "sensor_msgs/Image.h"
 #include "sensor_msgs/PointCloud2.h"
 
@@ -21,13 +22,8 @@ pcl::PointCloud<PointType>::Ptr depthCloud(new pcl::PointCloud<PointType>());
 deque<pcl::PointCloud<PointType>> cloudQueue;
 deque<double> timeQueue;
 
-// global depth register for obtaining depth of a feature
-DepthRegister *depthRegister;
-
-// feature publisher for VINS estimator
-ros::Publisher pub_feature;
-ros::Publisher pub_match;
-ros::Publisher pub_restart;
+std::array<std::string, 2> CAMS{
+    "cam0", "cam1"}; // TODO: parse this directly from the calibration file
 
 cv::Mat imageMsgToMat(const sensor_msgs::ImageConstPtr &img_msg) {
   cv_bridge::CvImageConstPtr ptr;
@@ -49,32 +45,50 @@ cv::Mat imageMsgToMat(const sensor_msgs::ImageConstPtr &img_msg) {
 
 class FeatureTrackerWrapper {
 public:
-  FeatureTrackerWrapper(const std::string& calibration_file_path) {
-    // initialize trackers
-    left_camera_tracker_.readIntrinsicParameter(calibration_file_path, "cam0");
-    right_camera_tracker_.readIntrinsicParameter(calibration_file_path, "cam1");
+  FeatureTrackerWrapper(const std::string &calibration_file_path) {
+    setupPublishers();
+    initializeTrackers(calibration_file_path);
+  }
+
+  void initializeTrackers(const std::string& calibration_file_path) {
+    for (const std::string &cam_name : CAMS) {
+      camera_trackers_.insert(std::make_pair(cam_name, FeatureTracker()));
+      camera_trackers_[cam_name].readIntrinsicParameter(calibration_file_path,
+                                                        cam_name);
+    }
+  }
+
+  void setupPublishers() {
+
+    for (const std::string &cam_name : CAMS) {
+      camera_pubs_.insert(std::make_pair(
+          cam_name, nh_.advertise<sensor_msgs::PointCloud>(
+                        PROJECT_NAME + "/vins/feature/feature/" + cam_name, 5)));
+    }
   }
 
   void processFrame(const sensor_msgs::ImageConstPtr &left_img_msg,
                     const sensor_msgs::ImageConstPtr &right_img_msg,
                     const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
     ROS_INFO("Processing data frame...");
-    std::thread left_img_thread(&FeatureTrackerWrapper::processImage, this,
-                                left_img_msg, std::ref(left_camera_tracker_),
-                                0);
-    std::thread right_img_thread(&FeatureTrackerWrapper::processImage, this,
-                                 right_img_msg, std::ref(right_camera_tracker_),
-                                 1);
     std::thread lidar_thread(&FeatureTrackerWrapper::processLidar, this,
                              laser_msg);
 
-    left_img_thread.join();
-    right_img_thread.join();
+
+    std::vector<std::thread> img_threads;
+    for (size_t i = 0; i < CAMS.size(); ++i) {
+      img_threads.emplace_back(&FeatureTrackerWrapper::processImage, this,
+                               left_img_msg, std::ref(camera_trackers_.at(CAMS[i])), i);
+    }
+    for (auto &img_thread : img_threads) {
+      img_thread.join();
+    }
     lidar_thread.join();
   }
 
   void processImage(const sensor_msgs::ImageConstPtr &img_msg,
                     FeatureTracker &tracker, size_t cam_id) {
+    ROS_INFO("Processing image from cam %zu...", cam_id);
     double cur_img_time = img_msg->header.stamp.toSec();
     cv::Mat image = imageMsgToMat(img_msg);
     tracker.readImage(image, cur_img_time);
@@ -126,7 +140,15 @@ public:
     feature_points->channels.push_back(velocity_x_of_point);
     feature_points->channels.push_back(velocity_y_of_point);
 
-    // get feature depth from the point cloud
+    // get feature depth from lidar point cloud
+    pcl::PointCloud<PointType>::Ptr depth_cloud_temp(
+        new pcl::PointCloud<PointType>());
+    mtx_lidar.lock();
+    *depth_cloud_temp = *depthCloud;
+    mtx_lidar.unlock();
+    sensor_msgs::ChannelFloat32 depth_of_points = depth_register_.get_depth(
+        img_msg->header.stamp, image, depth_cloud_temp, tracker.m_camera,
+        feature_points->points);
   }
 
   void processLidar(const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
@@ -242,12 +264,17 @@ public:
     downSizeFilter.setInputCloud(depthCloud);
     downSizeFilter.filter(*depthCloudDS);
     *depthCloud = *depthCloudDS;
-
   }
 
 private:
-  FeatureTracker left_camera_tracker_;
-  FeatureTracker right_camera_tracker_;
+  std::map<std::string, FeatureTracker>
+      camera_trackers_; // TODO: change to vector of trackers in order to avoid
+                        // lookups
+  DepthRegister depth_register_;
+  std::map<std::string, ros::Publisher>
+      camera_pubs_; // TODO: change to vector of publishers in order to avoid
+                    // lookups
+  ros::NodeHandle nh_;
   std::mutex mtx_lidar;
 };
 
@@ -281,15 +308,6 @@ int main(int argc, char **argv) {
       MySyncPolicy(10), left_img_sub, right_img_sub, lidar_sub);
   sync.registerCallback(boost::bind(&FeatureTrackerWrapper::processFrame,
                                     &feature_tracker_wrapper, _1, _2, _3));
-
-  // messages to vins estimator
-  /* pub_feature = n.advertise<sensor_msgs::PointCloud>( */
-  /*     PROJECT_NAME + "/vins/feature/feature", 5); */
-  /* pub_match = n.advertise<sensor_msgs::Image>( */
-  /*     PROJECT_NAME + "/vins/feature/feature_img", 5); */
-  /* pub_restart = */
-  /*     n.advertise<std_msgs::Bool>(PROJECT_NAME + "/vins/feature/restart", 5);
-   */
 
   ros::spin();
 
