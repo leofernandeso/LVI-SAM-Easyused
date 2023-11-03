@@ -98,7 +98,6 @@ CameraFactory::generateCameraFromYamlFile(const std::string& filename, const std
 
     Camera::ModelType modelType = Camera::MEI;
     const auto input_model_type = fs[cam_name]["model_type"];
-    std::cout << "input_model_type " << input_model_type.string() << std::endl;
     if (!input_model_type.isNone())
     {
         std::string sModelType;
@@ -141,10 +140,8 @@ CameraFactory::generateCameraFromYamlFile(const std::string& filename, const std
     case Camera::PINHOLE:
     {
         PinholeCameraPtr camera(new PinholeCamera);
-        std::cout << "Initializing pinhole camera" << std::endl;
         PinholeCamera::Parameters params = camera->getParameters();
         params.readFromYamlFile(filename, cam_name);
-        std::cout << params.fx() << std::endl;
         camera->setParameters(params);
         return camera;
     }
