@@ -14,21 +14,38 @@ use_lidar: 1                     # whether use depth info from lidar or not
 lidar_skip: 3                    # skip this amount of scans
 align_camera_lidar_estimation: 1 # align camera and lidar estimation for visualization
       
-#camera calibration 
-model_type: PINHOLE
-camera_name: cam1
-image_width: 1226
-image_height: 370
-distortion_parameters:
-  k1: 0.0
-  k2: 0.0
-  p1: 0.0
-  p2: 0.0
-projection_parameters:
-  fx: 7.070912e+02
-  fy: 7.070912e+02
-  cx: 6.018873e+02
-  cy: 1.831104e+02
+# Camera intrinsics
+cam0:
+  model_type: PINHOLE
+  camera_name: cam1
+  image_width: 1226
+  image_height: 370
+  distortion_parameters:
+    k1: 0.0
+    k2: 0.0
+    p1: 0.0
+    p2: 0.0
+  projection_parameters:
+    fx: 7.070912e+02
+    fy: 7.070912e+02
+    cx: 6.018873e+02
+    cy: 1.831104e+02
+
+cam1:
+  model_type: PINHOLE
+  camera_name: cam1
+  image_width: 1226
+  image_height: 370
+  distortion_parameters:
+    k1: 0.0
+    k2: 0.0
+    p1: 0.0
+    p2: 0.0
+  projection_parameters:
+    fx: 7.070912e+02
+    fy: 7.070912e+02
+    cx: 6.018873e+02
+    cy: 1.831104e+02
 
 #imu parameters       The more accurate parameters you provide, the worse performance
 acc_n: 0.02         # accelerometer measurement noise standard deviation.

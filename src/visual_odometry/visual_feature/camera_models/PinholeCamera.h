@@ -41,6 +41,7 @@ public:
         double cx(void) const;
         double cy(void) const;
 
+        bool readFromYamlFile(const std::string& filename, const std::string& cam_name);
         bool readFromYamlFile(const std::string& filename);
         void writeToYamlFile(const std::string& filename) const;
 

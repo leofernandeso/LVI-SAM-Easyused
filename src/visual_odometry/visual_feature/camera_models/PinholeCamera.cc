@@ -182,6 +182,49 @@ PinholeCamera::Parameters::readFromYamlFile(const std::string& filename)
     return true;
 }
 
+bool
+PinholeCamera::Parameters::readFromYamlFile(const std::string& filename, const std::string& cam_name)
+{
+    cv::FileStorage fs(filename, cv::FileStorage::READ);
+
+    if (!fs.isOpened())
+    {
+        return false;
+    }
+
+    const auto camera_config = fs[cam_name];
+    const auto input_model_type = camera_config["model_type"];
+    if (!input_model_type.isNone())
+    {
+        std::string sModelType;
+        input_model_type >> sModelType;
+
+        if (sModelType.compare("PINHOLE") != 0)
+        {
+            return false;
+        }
+    }
+
+    m_modelType = PINHOLE;
+    camera_config["camera_name"] >> m_cameraName;
+    m_imageWidth = static_cast<int>(camera_config["image_width"]);
+    m_imageHeight = static_cast<int>(camera_config["image_height"]);
+
+    cv::FileNode n = camera_config["distortion_parameters"];
+    m_k1 = static_cast<double>(n["k1"]);
+    m_k2 = static_cast<double>(n["k2"]);
+    m_p1 = static_cast<double>(n["p1"]);
+    m_p2 = static_cast<double>(n["p2"]);
+
+    n = camera_config["projection_parameters"];
+    m_fx = static_cast<double>(n["fx"]);
+    m_fy = static_cast<double>(n["fy"]);
+    m_cx = static_cast<double>(n["cx"]);
+    m_cy = static_cast<double>(n["cy"]);
+
+    return true;
+}
+
 void
 PinholeCamera::Parameters::writeToYamlFile(const std::string& filename) const
 {

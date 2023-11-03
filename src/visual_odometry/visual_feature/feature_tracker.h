@@ -38,7 +38,7 @@ public:
 
     bool updateID(unsigned int i);
 
-    void readIntrinsicParameter(const string &calib_file);
+    void readIntrinsicParameter(const string &calib_file, const std::string& cam_name);
 
     void showUndistortion(const string &name);
 

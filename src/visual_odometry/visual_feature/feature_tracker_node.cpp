@@ -6,8 +6,8 @@
 #include "sensor_msgs/PointCloud2.h"
 
 #include <message_filters/subscriber.h>
-#include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/time_synchronizer.h>
 
 #define SHOW_UNDISTORTION 0
 
@@ -29,10 +29,227 @@ ros::Publisher pub_feature;
 ros::Publisher pub_match;
 ros::Publisher pub_restart;
 
-void callback(const sensor_msgs::ImageConstPtr& left_img_msg, const sensor_msgs::ImageConstPtr& right_img_msg, const sensor_msgs::PointCloud2ConstPtr& laser_msg)
-{
-  ROS_INFO("Processing image and lidar point cloud...");
+cv::Mat imageMsgToMat(const sensor_msgs::ImageConstPtr &img_msg) {
+  cv_bridge::CvImageConstPtr ptr;
+  if (img_msg->encoding == "8UC1") {
+    sensor_msgs::Image img;
+    img.header = img_msg->header;
+    img.height = img_msg->height;
+    img.width = img_msg->width;
+    img.is_bigendian = img_msg->is_bigendian;
+    img.step = img_msg->step;
+    img.data = img_msg->data;
+    img.encoding = "mono8";
+    ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
+  } else {
+    ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
+  }
+  return ptr->image;
 }
+
+class FeatureTrackerWrapper {
+public:
+  FeatureTrackerWrapper(const std::string& calibration_file_path) {
+    // initialize trackers
+    left_camera_tracker_.readIntrinsicParameter(calibration_file_path, "cam0");
+    right_camera_tracker_.readIntrinsicParameter(calibration_file_path, "cam1");
+  }
+
+  void processFrame(const sensor_msgs::ImageConstPtr &left_img_msg,
+                    const sensor_msgs::ImageConstPtr &right_img_msg,
+                    const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
+    ROS_INFO("Processing data frame...");
+    std::thread left_img_thread(&FeatureTrackerWrapper::processImage, this,
+                                left_img_msg, std::ref(left_camera_tracker_),
+                                0);
+    std::thread right_img_thread(&FeatureTrackerWrapper::processImage, this,
+                                 right_img_msg, std::ref(right_camera_tracker_),
+                                 1);
+    std::thread lidar_thread(&FeatureTrackerWrapper::processLidar, this,
+                             laser_msg);
+
+    left_img_thread.join();
+    right_img_thread.join();
+    lidar_thread.join();
+  }
+
+  void processImage(const sensor_msgs::ImageConstPtr &img_msg,
+                    FeatureTracker &tracker, size_t cam_id) {
+    double cur_img_time = img_msg->header.stamp.toSec();
+    cv::Mat image = imageMsgToMat(img_msg);
+    tracker.readImage(image, cur_img_time);
+
+    // not sure what this does for now
+    for (unsigned int i = 0;; i++) {
+      bool completed = false;
+      for (int j = 0; j < NUM_OF_CAM; j++)
+        if (j != 1 || !STEREO_TRACK)
+          completed |= tracker.updateID(i);
+      if (!completed)
+        break;
+    }
+
+    sensor_msgs::PointCloudPtr feature_points(new sensor_msgs::PointCloud);
+    sensor_msgs::ChannelFloat32 id_of_point;
+    sensor_msgs::ChannelFloat32 u_of_point;
+    sensor_msgs::ChannelFloat32 v_of_point;
+    sensor_msgs::ChannelFloat32 velocity_x_of_point;
+    sensor_msgs::ChannelFloat32 velocity_y_of_point;
+
+    feature_points->header.stamp = img_msg->header.stamp;
+    feature_points->header.frame_id = "vins_body";
+
+    auto &un_pts = tracker.cur_un_pts;
+    auto &cur_pts = tracker.cur_pts;
+    auto &ids = tracker.ids;
+    auto &pts_velocity = tracker.pts_velocity;
+    for (unsigned int j = 0; j < ids.size(); j++) {
+      if (tracker.track_cnt[j] > 1) {
+        int p_id = ids[j];
+        geometry_msgs::Point32 p;
+        p.x = un_pts[j].x;
+        p.y = un_pts[j].y;
+        p.z = 1;
+
+        feature_points->points.push_back(p);
+        id_of_point.values.push_back(p_id * NUM_OF_CAM + cam_id);
+        u_of_point.values.push_back(cur_pts[j].x);
+        v_of_point.values.push_back(cur_pts[j].y);
+        velocity_x_of_point.values.push_back(pts_velocity[j].x);
+        velocity_y_of_point.values.push_back(pts_velocity[j].y);
+      }
+    }
+
+    feature_points->channels.push_back(id_of_point);
+    feature_points->channels.push_back(u_of_point);
+    feature_points->channels.push_back(v_of_point);
+    feature_points->channels.push_back(velocity_x_of_point);
+    feature_points->channels.push_back(velocity_y_of_point);
+
+    // get feature depth from the point cloud
+  }
+
+  void processLidar(const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
+    ROS_INFO("Processing lidar data...");
+    static int lidar_count = -1;
+    if (++lidar_count % (LIDAR_SKIP + 1) != 0)
+      return;
+
+    // 0. listen to transform
+    static tf::TransformListener listener;
+    static tf::StampedTransform transform_world_cFLU;
+    static tf::StampedTransform transform_cFLU_imu;
+    std::cout << "Waiting for transform..." << std::endl;
+    try {
+      listener.waitForTransform("vins_world", "vins_cameraFLU",
+                                laser_msg->header.stamp, ros::Duration(0.01));
+      listener.lookupTransform("vins_world", "vins_cameraFLU",
+                               laser_msg->header.stamp, transform_world_cFLU);
+      listener.waitForTransform("vins_cameraFLU", "vins_body_imuhz",
+                                laser_msg->header.stamp, ros::Duration(0.01));
+      listener.lookupTransform("vins_cameraFLU", "vins_body_imuhz",
+                               laser_msg->header.stamp, transform_cFLU_imu);
+    } catch (tf::TransformException ex) {
+      ROS_ERROR("%s", ex.what());
+      return;
+    }
+
+    double xCur, yCur, zCur, rollCur, pitchCur, yawCur;
+    xCur = transform_world_cFLU.getOrigin().x();
+    yCur = transform_world_cFLU.getOrigin().y();
+    zCur = transform_world_cFLU.getOrigin().z();
+    tf::Matrix3x3 m(transform_world_cFLU.getRotation());
+    m.getRPY(rollCur, pitchCur, yawCur);
+    Eigen::Affine3f transNow =
+        pcl::getTransformation(xCur, yCur, zCur, rollCur, pitchCur, yawCur);
+
+    std::cout << "transNow: " << transNow.matrix() << std::endl;
+
+    // 1. convert laser cloud message to pcl
+    pcl::PointCloud<PointType>::Ptr laser_cloud_in(
+        new pcl::PointCloud<PointType>());
+    pcl::fromROSMsg(*laser_msg, *laser_cloud_in);
+
+    // 2. downsample new cloud (save memory)
+    pcl::PointCloud<PointType>::Ptr laser_cloud_in_ds(
+        new pcl::PointCloud<PointType>());
+    static pcl::VoxelGrid<PointType> downSizeFilter;
+    downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+    downSizeFilter.setInputCloud(laser_cloud_in);
+    downSizeFilter.filter(*laser_cloud_in_ds);
+    *laser_cloud_in = *laser_cloud_in_ds;
+
+    // 3.
+    // 把lidar坐标系下的点云转到相机的FLU坐标系下表示，因为下一步需要使用相机FLU坐标系下的点云进行初步过滤
+    pcl::PointCloud<PointType>::Ptr laser_cloud_offset(
+        new pcl::PointCloud<PointType>());
+    //; T_cFLU_lidar
+    tf::Transform transform_cFLU_lidar =
+        transform_cFLU_imu * Transform_imu_lidar;
+    double roll, pitch, yaw, x, y, z;
+    x = transform_cFLU_lidar.getOrigin().getX();
+    y = transform_cFLU_lidar.getOrigin().getY();
+    z = transform_cFLU_lidar.getOrigin().getZ();
+    tf::Matrix3x3(transform_cFLU_lidar.getRotation()).getRPY(roll, pitch, yaw);
+    Eigen::Affine3f transOffset =
+        pcl::getTransformation(x, y, z, roll, pitch, yaw);
+    //; lidar本体坐标系下的点云，转到相机FLU坐标系下表示
+    pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_offset, transOffset);
+    *laser_cloud_in = *laser_cloud_offset;
+
+    // 4. filter lidar points (only keep points in camera view)
+    //; 根据已经转到相机FLU坐标系下的点云，先排除不在相机FoV内的点云
+    pcl::PointCloud<PointType>::Ptr laser_cloud_in_filter(
+        new pcl::PointCloud<PointType>());
+    for (int i = 0; i < (int)laser_cloud_in->size(); ++i) {
+      PointType p = laser_cloud_in->points[i];
+      if (p.x >= 0 && abs(p.y / p.x) <= 10 && abs(p.z / p.x) <= 10)
+        laser_cloud_in_filter->push_back(p);
+    }
+    *laser_cloud_in = *laser_cloud_in_filter;
+
+    // 5. transform new cloud into global odom frame
+    pcl::PointCloud<PointType>::Ptr laser_cloud_global(
+        new pcl::PointCloud<PointType>());
+    //; cameraFLU坐标系下的点云，转到vinsworld系下表示
+    pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_global, transNow);
+
+    // 6. save new cloud
+    double timeScanCur = laser_msg->header.stamp.toSec();
+    cloudQueue.push_back(*laser_cloud_global);
+    timeQueue.push_back(timeScanCur);
+
+    // 7. pop old cloud
+    while (!timeQueue.empty()) {
+      if (timeScanCur - timeQueue.front() > 5.0) {
+        cloudQueue.pop_front();
+        timeQueue.pop_front();
+      } else {
+        break;
+      }
+    }
+
+    std::lock_guard<std::mutex> lock(mtx_lidar);
+    // 8. fuse global cloud
+    depthCloud->clear();
+    for (int i = 0; i < (int)cloudQueue.size(); ++i)
+      *depthCloud += cloudQueue[i];
+
+    // 9. downsample global cloud
+    pcl::PointCloud<PointType>::Ptr depthCloudDS(
+        new pcl::PointCloud<PointType>());
+    downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+    downSizeFilter.setInputCloud(depthCloud);
+    downSizeFilter.filter(*depthCloudDS);
+    *depthCloud = *depthCloudDS;
+
+  }
+
+private:
+  FeatureTracker left_camera_tracker_;
+  FeatureTracker right_camera_tracker_;
+  std::mutex mtx_lidar;
+};
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "vins");
@@ -40,24 +257,39 @@ int main(int argc, char **argv) {
   ROS_INFO("\033[1;32m----> Visual Feature Tracker Started.\033[0m");
   ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
                                  ros::console::levels::Info);
+  std::string calibration_file_path;
+  n.getParam("vins_config_file", calibration_file_path);
   readParameters(n);
 
-  // subscribers. use a message filter to software-synchronize the images and lidar
-  message_filters::Subscriber<sensor_msgs::Image> left_img_sub(n, LEFT_IMAGE_TOPIC, 5);
-  message_filters::Subscriber<sensor_msgs::Image> right_img_sub(n, RIGHT_IMAGE_TOPIC, 5);
-  message_filters::Subscriber<sensor_msgs::PointCloud2> lidar_sub(n, POINT_CLOUD_TOPIC, 5);
+  // subscribers. use a message filter to software-synchronize the images and
+  // lidar
+  message_filters::Subscriber<sensor_msgs::Image> left_img_sub(
+      n, LEFT_IMAGE_TOPIC, 5);
+  message_filters::Subscriber<sensor_msgs::Image> right_img_sub(
+      n, RIGHT_IMAGE_TOPIC, 5);
+  message_filters::Subscriber<sensor_msgs::PointCloud2> lidar_sub(
+      n, POINT_CLOUD_TOPIC, 5);
 
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::PointCloud2> MySyncPolicy;
-  message_filters::Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), left_img_sub, right_img_sub, lidar_sub);
-  sync.registerCallback(boost::bind(&callback, _1, _2, _3));
+  // initializing the feature tracker
+  FeatureTrackerWrapper feature_tracker_wrapper{calibration_file_path};
+
+  // initializing message filter so we can get synchronized messages
+  typedef message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::PointCloud2>
+      MySyncPolicy;
+  message_filters::Synchronizer<MySyncPolicy> sync(
+      MySyncPolicy(10), left_img_sub, right_img_sub, lidar_sub);
+  sync.registerCallback(boost::bind(&FeatureTrackerWrapper::processFrame,
+                                    &feature_tracker_wrapper, _1, _2, _3));
 
   // messages to vins estimator
-  pub_feature = n.advertise<sensor_msgs::PointCloud>(
-      PROJECT_NAME + "/vins/feature/feature", 5);
-  pub_match = n.advertise<sensor_msgs::Image>(
-      PROJECT_NAME + "/vins/feature/feature_img", 5);
-  pub_restart =
-      n.advertise<std_msgs::Bool>(PROJECT_NAME + "/vins/feature/restart", 5);
+  /* pub_feature = n.advertise<sensor_msgs::PointCloud>( */
+  /*     PROJECT_NAME + "/vins/feature/feature", 5); */
+  /* pub_match = n.advertise<sensor_msgs::Image>( */
+  /*     PROJECT_NAME + "/vins/feature/feature_img", 5); */
+  /* pub_restart = */
+  /*     n.advertise<std_msgs::Bool>(PROJECT_NAME + "/vins/feature/restart", 5);
+   */
 
   ros::spin();
 
