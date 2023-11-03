@@ -67,7 +67,6 @@ public:
 class DepthRegister
 {
 public:
-    ros::NodeHandle n;
     // publisher for visualization
     ros::Publisher pub_depth_feature;
     ros::Publisher pub_depth_image;
@@ -79,13 +78,8 @@ public:
     const int num_bins = 360;
     vector<vector<PointType>> pointsArray;
 
-    DepthRegister(ros::NodeHandle n_in) : n(n_in)
+    DepthRegister()
     {
-        // messages for RVIZ visualization
-        pub_depth_feature = n.advertise<sensor_msgs::PointCloud2>(PROJECT_NAME + "/vins/depth/depth_feature", 5);
-        pub_depth_image = n.advertise<sensor_msgs::Image>(PROJECT_NAME + "/vins/depth/depth_image", 5);
-        pub_depth_cloud = n.advertise<sensor_msgs::PointCloud2>(PROJECT_NAME + "/vins/depth/depth_cloud", 5);
-
         pointsArray.resize(num_bins);
         for (int i = 0; i < num_bins; ++i)
             pointsArray[i].resize(num_bins);
@@ -108,15 +102,9 @@ public:
         // 0.3 look up transform at current image time
         try
         {
-
-        #if IF_OFFICIAL
-            listener.waitForTransform("vins_world", "vins_body_ros", stamp_cur, ros::Duration(0.01));
-            listener.lookupTransform("vins_world", "vins_body_ros", stamp_cur, transform);
-        #else
-            //? mod: 直接监听vins_camFLU坐标系在世界坐标系下的表示，这样就把VIO的动态外参包括进去了
-            listener.waitForTransform("vins_world", "vins_cameraFLU", stamp_cur, ros::Duration(0.01));
-            listener.lookupTransform("vins_world", "vins_cameraFLU", stamp_cur, transform);
-        #endif
+          //? mod: 直接监听vins_camFLU坐标系在世界坐标系下的表示，这样就把VIO的动态外参包括进去了
+          listener.waitForTransform("vins_world", "vins_cameraFLU", stamp_cur, ros::Duration(0.01));
+          listener.lookupTransform("vins_world", "vins_cameraFLU", stamp_cur, transform);
         }
         catch (tf::TransformException ex)
         {
@@ -275,12 +263,8 @@ public:
         }
 
         // visualize features in cartesian 3d space (including the feature without depth (default 1))
-#if IF_OFFICIAL
-        publishCloud(&pub_depth_feature, features_3d_sphere, stamp_cur, "vins_body_ros");
-#else
         //? mod：发布点云坐标系
         publishCloud(&pub_depth_feature, features_3d_sphere, stamp_cur, "vins_cameraFLU");
-#endif
 
         // update depth value for return
         for (int i = 0; i < (int)features_3d_sphere->size(); ++i)
