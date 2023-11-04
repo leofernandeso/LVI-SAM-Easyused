@@ -107,8 +107,10 @@ public:
         depth_of_point.values.resize(features_2d.size(), -1);
 
         // 0.2  check if depthCloud available
-        if (depthCloud->size() == 0)
+        if (depthCloud->size() == 0) {
+            ROS_ERROR("DepthRegister::get_depth: Point cloud is empty!");
             return depth_of_point;
+        }
 
         // 0.3 look up transform at current image time
         try

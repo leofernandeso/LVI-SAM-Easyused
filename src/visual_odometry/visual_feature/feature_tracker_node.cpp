@@ -74,25 +74,18 @@ public:
                     const sensor_msgs::ImageConstPtr &right_img_msg,
                     const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
     ROS_INFO("Processing data frame...");
-
-
     std::vector<std::future<void>> futures;
-    futures.emplace_back(std::async(std::launch::async, &FeatureTrackerWrapper::processLidar, this, laser_msg));
+    futures.emplace_back(std::async(std::launch::async,
+                                    &FeatureTrackerWrapper::processLidar, this,
+                                    laser_msg));
     for (size_t i = 0; i < CAMS.size(); ++i) {
-      futures.emplace_back(std::async(std::launch::async, &FeatureTrackerWrapper::processImage, this,
-                                      left_img_msg,
-                                      std::ref(camera_trackers_.at(CAMS[i])), i));
+      futures.emplace_back(std::async(
+          std::launch::async, &FeatureTrackerWrapper::processImage, this,
+          left_img_msg, std::ref(camera_trackers_.at(CAMS[i])), i));
     }
 
-    // wait for all threads to finish
-    while (!futures.empty()) {
-      for (auto it = futures.begin(); it != futures.end();) {
-        if (it->wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-          it = futures.erase(it);
-        } else {
-          ++it;
-        }
-      }
+    for (auto &future : futures) {
+      future.wait();
     }
 
     /* std::thread lidar_thread(&FeatureTrackerWrapper::processLidar, this, */
@@ -183,7 +176,6 @@ public:
     } else {
       tracker.markFlowAsAvailable();
     }
-
   }
 
   void processLidar(const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
@@ -328,11 +320,11 @@ int main(int argc, char **argv) {
   // subscribers. use a message filter to software-synchronize the images and
   // lidar
   message_filters::Subscriber<sensor_msgs::Image> left_img_sub(
-      n, LEFT_IMAGE_TOPIC, 5);
+      n, LEFT_IMAGE_TOPIC, 10);
   message_filters::Subscriber<sensor_msgs::Image> right_img_sub(
-      n, RIGHT_IMAGE_TOPIC, 5);
+      n, RIGHT_IMAGE_TOPIC, 10);
   message_filters::Subscriber<sensor_msgs::PointCloud2> lidar_sub(
-      n, POINT_CLOUD_TOPIC, 5);
+      n, POINT_CLOUD_TOPIC, 10);
 
   // initializing the feature tracker
   FeatureTrackerWrapper feature_tracker_wrapper{calibration_file_path};
