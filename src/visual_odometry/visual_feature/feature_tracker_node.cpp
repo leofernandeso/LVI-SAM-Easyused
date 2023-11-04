@@ -2,6 +2,7 @@
 
 #include <future>
 
+#include "parameters_utils.hpp"
 #include "feature_tracker.h"
 #include "ros/console_backend.h"
 #include "ros/node_handle.h"
@@ -313,30 +314,34 @@ int main(int argc, char **argv) {
   ROS_INFO("\033[1;32m----> Visual Feature Tracker Started.\033[0m");
   ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
                                  ros::console::levels::Info);
-  std::string calibration_file_path;
-  n.getParam("vins_config_file", calibration_file_path);
-  readParameters(n);
 
-  // subscribers. use a message filter to software-synchronize the images and
-  // lidar
-  message_filters::Subscriber<sensor_msgs::Image> left_img_sub(
-      n, LEFT_IMAGE_TOPIC, 10);
-  message_filters::Subscriber<sensor_msgs::Image> right_img_sub(
-      n, RIGHT_IMAGE_TOPIC, 10);
-  message_filters::Subscriber<sensor_msgs::PointCloud2> lidar_sub(
-      n, POINT_CLOUD_TOPIC, 10);
+  Options options = loadInputParameters(n);
+  options.print();
 
-  // initializing the feature tracker
-  FeatureTrackerWrapper feature_tracker_wrapper{calibration_file_path};
+  /* std::string calibration_file_path; */
+  /* n.getParam("vins_config_file", calibration_file_path); */
+  /* readParameters(n); */
 
-  // initializing message filter so we can get synchronized messages
-  typedef message_filters::sync_policies::ApproximateTime<
-      sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::PointCloud2>
-      MySyncPolicy;
-  message_filters::Synchronizer<MySyncPolicy> sync(
-      MySyncPolicy(10), left_img_sub, right_img_sub, lidar_sub);
-  sync.registerCallback(boost::bind(&FeatureTrackerWrapper::processFrame,
-                                    &feature_tracker_wrapper, _1, _2, _3));
+  /* // subscribers. use a message filter to software-synchronize the images and */
+  /* // lidar */
+  /* message_filters::Subscriber<sensor_msgs::Image> left_img_sub( */
+  /*     n, LEFT_IMAGE_TOPIC, 10); */
+  /* message_filters::Subscriber<sensor_msgs::Image> right_img_sub( */
+  /*     n, RIGHT_IMAGE_TOPIC, 10); */
+  /* message_filters::Subscriber<sensor_msgs::PointCloud2> lidar_sub( */
+  /*     n, POINT_CLOUD_TOPIC, 10); */
+
+  /* // initializing the feature tracker */
+  /* FeatureTrackerWrapper feature_tracker_wrapper{calibration_file_path}; */
+
+  /* // initializing message filter so we can get synchronized messages */
+  /* typedef message_filters::sync_policies::ApproximateTime< */
+  /*     sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::PointCloud2> */
+  /*     MySyncPolicy; */
+  /* message_filters::Synchronizer<MySyncPolicy> sync( */
+  /*     MySyncPolicy(10), left_img_sub, right_img_sub, lidar_sub); */
+  /* sync.registerCallback(boost::bind(&FeatureTrackerWrapper::processFrame, */
+  /*                                   &feature_tracker_wrapper, _1, _2, _3)); */
 
   ros::spin();
 

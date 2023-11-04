@@ -8,6 +8,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 
+#include "parameters_utils.hpp"
 #include "estimator.h"
 #include "parameters.h"
 #include "utility/visualization.h"
@@ -319,28 +320,31 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "vins");
     ros::NodeHandle n;
     ROS_INFO("\033[1;32m----> Visual Odometry Estimator Started.\033[0m");
-    ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Warn);
+    ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
 
-    readParameters(n);
-    estimator.setParameter();
+    Options options = loadInputParameters(n);
+    options.print();
 
-    registerPub(n);
+    /* readParameters(n); */
+    /* estimator.setParameter(); */
 
-#if IF_OFFICIAL
-    odomRegister = new odometryRegister(n);
-#else
-    Eigen::Vector3d t_lidar_imu = -R_imu_lidar.transpose() * t_imu_lidar;
-    odomRegister = new odometryRegister(n, R_imu_lidar.transpose(), t_lidar_imu);
-#endif
+    /* registerPub(n); */
 
-    ros::Subscriber sub_imu = n.subscribe(IMU_TOPIC, 5000, imu_callback, ros::TransportHints().tcpNoDelay());
-    ros::Subscriber sub_odom = n.subscribe("odometry/imu", 5000, odom_callback);
-    ros::Subscriber sub_image = n.subscribe(PROJECT_NAME + "/vins/feature/feature/cam0", 1, feature_callback);    // use only first cam for now
-    ros::Subscriber sub_restart = n.subscribe(PROJECT_NAME + "/vins/feature/restart", 1, restart_callback);
-    if (!USE_LIDAR)
-        sub_odom.shutdown();
+/* #if IF_OFFICIAL */
+    /* odomRegister = new odometryRegister(n); */
+/* #else */
+    /* Eigen::Vector3d t_lidar_imu = -R_imu_lidar.transpose() * t_imu_lidar; */
+    /* odomRegister = new odometryRegister(n, R_imu_lidar.transpose(), t_lidar_imu); */
+/* #endif */
 
-    std::thread measurement_process{process};
+    /* ros::Subscriber sub_imu = n.subscribe(IMU_TOPIC, 5000, imu_callback, ros::TransportHints().tcpNoDelay()); */
+    /* ros::Subscriber sub_odom = n.subscribe("odometry/imu", 5000, odom_callback); */
+    /* ros::Subscriber sub_image = n.subscribe(PROJECT_NAME + "/vins/feature/feature/cam0", 1, feature_callback);    // use only first cam for now */
+    /* ros::Subscriber sub_restart = n.subscribe(PROJECT_NAME + "/vins/feature/restart", 1, restart_callback); */
+    /* if (!USE_LIDAR) */
+    /*     sub_odom.shutdown(); */
+
+    /* std::thread measurement_process{process}; */
 
     ros::MultiThreadedSpinner spinner(4);
     spinner.spin();

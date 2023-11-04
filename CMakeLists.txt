@@ -12,7 +12,7 @@ add_definitions(-DIF_OFFICIAL=0)
 ######################
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS "-std=c++17")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -pthread")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -pthread -march=native")
 
 ######################
 ### Packages
@@ -93,6 +93,8 @@ link_directories(
 ######################
 ### visual odometry
 ######################
+include_directories(src/visual_odometry)
+
 file(GLOB visual_feature_files
     "src/visual_odometry/visual_feature/*.cpp"
     "src/visual_odometry/visual_feature/camera_models/*.cc"
@@ -125,7 +127,6 @@ target_link_libraries(${PROJECT_NAME}_visual_loop ${catkin_LIBRARIES} ${PCL_LIBR
 ######################
 ### lidar odometry
 ######################
-
 # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/lidar_odometry/imuPreintegration.cpp)
 target_link_libraries(${PROJECT_NAME}_imuPreintegration ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam Boost::timer)
