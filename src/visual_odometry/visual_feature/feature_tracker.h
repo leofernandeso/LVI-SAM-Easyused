@@ -25,6 +25,11 @@ bool inBorder(const cv::Point2f &pt);
 void reduceVector(vector<cv::Point2f> &v, vector<uchar> status);
 void reduceVector(vector<int> &v, vector<uchar> status);
 
+struct FeatureTrackerParams {
+  int max_features_to_track;
+  int min_dist_between_features;
+};
+
 class FeatureTracker
 {
 public:
@@ -46,6 +51,10 @@ public:
 
     void undistortedPoints();
 
+    bool isFlowAvailable() const;
+
+    void markFlowAsAvailable();
+
     cv::Mat mask;
     cv::Mat fisheye_mask;
     cv::Mat prev_img, cur_img, forw_img;
@@ -58,8 +67,10 @@ public:
     map<int, cv::Point2f> cur_un_pts_map;
     map<int, cv::Point2f> prev_un_pts_map;
     camodocal::CameraPtr m_camera;
+    FeatureTrackerParams params_;
     double cur_time;
     double prev_time;
+    bool is_flow_available{false};
 
     static int n_id;
 };

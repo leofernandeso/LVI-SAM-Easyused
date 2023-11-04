@@ -127,36 +127,35 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     for (auto &n : track_cnt)
         n++;
 
-    if (PUB_THIS_FRAME)
+    rejectWithF();
+    ROS_DEBUG("set mask begins");
+    TicToc t_m;
+    setMask();
+    ROS_DEBUG("set mask costs %fms", t_m.toc());
+
+    ROS_DEBUG("detect feature begins");
+    TicToc t_t;
+    int n_max_cnt = MAX_CNT - static_cast<int>(forw_pts.size());
+    if (n_max_cnt > 0)
     {
-        rejectWithF();
-        ROS_DEBUG("set mask begins");
-        TicToc t_m;
-        setMask();
-        ROS_DEBUG("set mask costs %fms", t_m.toc());
-
-        ROS_DEBUG("detect feature begins");
-        TicToc t_t;
-        int n_max_cnt = MAX_CNT - static_cast<int>(forw_pts.size());
-        if (n_max_cnt > 0)
-        {
-            if(mask.empty())
-                cout << "mask is empty " << endl;
-            if (mask.type() != CV_8UC1)
-                cout << "mask type wrong " << endl;
-            if (mask.size() != forw_img.size())
-                cout << "wrong size " << endl;
-            cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.01, MIN_DIST, mask);
-        }
-        else
-            n_pts.clear();
-        ROS_DEBUG("detect feature costs: %fms", t_t.toc());
-
-        ROS_DEBUG("add feature begins");
-        TicToc t_a;
-        addPoints();
-        ROS_DEBUG("selectFeature costs: %fms", t_a.toc());
+        if(mask.empty())
+            ROS_DEBUG("Mask is empty.");
+        if (mask.type() != CV_8UC1)
+            ROS_DEBUG("Wrong mask type.");
+            /* cout << "mask type wrong " << endl; */
+        if (mask.size() != forw_img.size())
+            ROS_DEBUG("Mask has wrong size.");
+        cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.01, MIN_DIST, mask);
     }
+    else
+        n_pts.clear();
+    ROS_DEBUG("detect feature costs: %fms", t_t.toc());
+
+    ROS_DEBUG("add feature begins");
+    TicToc t_a;
+    addPoints();
+    ROS_DEBUG("selectFeature costs: %fms", t_a.toc());
+
     prev_img = cur_img;
     prev_pts = cur_pts;
     prev_un_pts = cur_un_pts;
@@ -303,4 +302,13 @@ void FeatureTracker::undistortedPoints()
         }
     }
     prev_un_pts_map = cur_un_pts_map;
+}
+
+
+bool FeatureTracker::isFlowAvailable() const {
+  return is_flow_available;
+}
+
+void FeatureTracker::markFlowAsAvailable() {
+  is_flow_available = true;
 }
