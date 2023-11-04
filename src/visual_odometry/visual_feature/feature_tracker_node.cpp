@@ -1,5 +1,7 @@
 #include <ros/ros.h>
 
+#include <future>
+
 #include "feature_tracker.h"
 #include "ros/console_backend.h"
 #include "ros/node_handle.h"
@@ -50,7 +52,7 @@ public:
     initializeTrackers(calibration_file_path);
   }
 
-  void initializeTrackers(const std::string& calibration_file_path) {
+  void initializeTrackers(const std::string &calibration_file_path) {
     for (const std::string &cam_name : CAMS) {
       camera_trackers_.insert(std::make_pair(cam_name, FeatureTracker()));
       camera_trackers_[cam_name].readIntrinsicParameter(calibration_file_path,
@@ -62,8 +64,9 @@ public:
 
     for (const std::string &cam_name : CAMS) {
       camera_pubs_.insert(std::make_pair(
-          cam_name, nh_.advertise<sensor_msgs::PointCloud>(
-                        PROJECT_NAME + "/vins/feature/feature/" + cam_name, 5)));
+          cam_name,
+          nh_.advertise<sensor_msgs::PointCloud>(
+              PROJECT_NAME + "/vins/feature/feature/" + cam_name, 5)));
     }
   }
 
@@ -71,19 +74,40 @@ public:
                     const sensor_msgs::ImageConstPtr &right_img_msg,
                     const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
     ROS_INFO("Processing data frame...");
-    std::thread lidar_thread(&FeatureTrackerWrapper::processLidar, this,
-                             laser_msg);
 
 
-    std::vector<std::thread> img_threads;
+    std::vector<std::future<void>> futures;
+    futures.emplace_back(std::async(std::launch::async, &FeatureTrackerWrapper::processLidar, this, laser_msg));
     for (size_t i = 0; i < CAMS.size(); ++i) {
-      img_threads.emplace_back(&FeatureTrackerWrapper::processImage, this,
-                               left_img_msg, std::ref(camera_trackers_.at(CAMS[i])), i);
+      futures.emplace_back(std::async(std::launch::async, &FeatureTrackerWrapper::processImage, this,
+                                      left_img_msg,
+                                      std::ref(camera_trackers_.at(CAMS[i])), i));
     }
-    for (auto &img_thread : img_threads) {
-      img_thread.join();
+
+    // wait for all threads to finish
+    while (!futures.empty()) {
+      for (auto it = futures.begin(); it != futures.end();) {
+        if (it->wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+          it = futures.erase(it);
+        } else {
+          ++it;
+        }
+      }
     }
-    lidar_thread.join();
+
+    /* std::thread lidar_thread(&FeatureTrackerWrapper::processLidar, this, */
+    /*                          laser_msg); */
+    /* std::vector<std::thread> img_threads; */
+    /* for (size_t i = 0; i < CAMS.size(); ++i) { */
+    /*   img_threads.emplace_back(&FeatureTrackerWrapper::processImage, this, */
+    /*                            left_img_msg, */
+    /*                            std::ref(camera_trackers_.at(CAMS[i])), i); */
+    /* } */
+
+    /* lidar_thread.join(); */
+    /* for (auto &img_thread : img_threads) { */
+    /*   img_thread.join(); */
+    /* } */
   }
 
   void processImage(const sensor_msgs::ImageConstPtr &img_msg,
@@ -131,6 +155,7 @@ public:
         v_of_point.values.push_back(cur_pts[j].y);
         velocity_x_of_point.values.push_back(pts_velocity[j].x);
         velocity_y_of_point.values.push_back(pts_velocity[j].y);
+        std::cout << "Adding point " << p_id << " to feature cloud.";
       }
     }
 
@@ -146,16 +171,28 @@ public:
     mtx_lidar.lock();
     *depth_cloud_temp = *depthCloud;
     mtx_lidar.unlock();
+
     sensor_msgs::ChannelFloat32 depth_of_points = depth_register_.get_depth(
         img_msg->header.stamp, image, depth_cloud_temp, tracker.m_camera,
         feature_points->points);
+
+    feature_points->channels.push_back(depth_of_points);
+
+    if (tracker.isFlowAvailable()) {
+      camera_pubs_.at(CAMS[cam_id]).publish(feature_points);
+    } else {
+      tracker.markFlowAsAvailable();
+    }
+
   }
 
   void processLidar(const sensor_msgs::PointCloud2ConstPtr &laser_msg) {
     ROS_INFO("Processing lidar data...");
     static int lidar_count = -1;
-    if (++lidar_count % (LIDAR_SKIP + 1) != 0)
+    if (++lidar_count % (LIDAR_SKIP + 1) != 0) {
+      std::cout << "skip lidar frame" << std::endl;
       return;
+    }
 
     // 0. listen to transform
     static tf::TransformListener listener;
@@ -267,11 +304,11 @@ public:
   }
 
 private:
-  std::map<std::string, FeatureTracker>
+  std::unordered_map<std::string, FeatureTracker>
       camera_trackers_; // TODO: change to vector of trackers in order to avoid
                         // lookups
   DepthRegister depth_register_;
-  std::map<std::string, ros::Publisher>
+  std::unordered_map<std::string, ros::Publisher>
       camera_pubs_; // TODO: change to vector of publishers in order to avoid
                     // lookups
   ros::NodeHandle nh_;

@@ -335,7 +335,7 @@ int main(int argc, char **argv)
 
     ros::Subscriber sub_imu = n.subscribe(IMU_TOPIC, 5000, imu_callback, ros::TransportHints().tcpNoDelay());
     ros::Subscriber sub_odom = n.subscribe("odometry/imu", 5000, odom_callback);
-    ros::Subscriber sub_image = n.subscribe(PROJECT_NAME + "/vins/feature/feature", 1, feature_callback);
+    ros::Subscriber sub_image = n.subscribe(PROJECT_NAME + "/vins/feature/feature/cam0", 1, feature_callback);    // use only first cam for now
     ros::Subscriber sub_restart = n.subscribe(PROJECT_NAME + "/vins/feature/restart", 1, restart_callback);
     if (!USE_LIDAR)
         sub_odom.shutdown();
