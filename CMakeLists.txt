@@ -93,7 +93,8 @@ link_directories(
 ######################
 ### visual odometry
 ######################
-include_directories(src/visual_odometry)
+include_directories(src/visual_odometry/include)
+add_library(parameters src/visual_odometry/parameters_utils.cpp)
 
 file(GLOB visual_feature_files
     "src/visual_odometry/visual_feature/*.cpp"
@@ -116,11 +117,11 @@ file(GLOB visual_loop_files
 )
 # Visual Feature Tracker
 add_executable(${PROJECT_NAME}_visual_feature ${visual_feature_files})
-target_link_libraries(${PROJECT_NAME}_visual_feature ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}_visual_feature ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} parameters)
 # Visual Odometry
 add_executable(${PROJECT_NAME}_visual_odometry ${visual_odometry_files})
-target_link_libraries(${PROJECT_NAME}_visual_odometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES}) 
-# Visual Lopp
+target_link_libraries(${PROJECT_NAME}_visual_odometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} parameters) 
+# Visual Loop
 add_executable(${PROJECT_NAME}_visual_loop ${visual_loop_files})
 target_link_libraries(${PROJECT_NAME}_visual_loop ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES}) 
 

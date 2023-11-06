@@ -2,7 +2,8 @@
 
 #include <future>
 
-#include "parameters_utils.hpp"
+#include "parameters.h"
+#include "parameters_utils.h"
 #include "feature_tracker.h"
 #include "ros/console_backend.h"
 #include "ros/node_handle.h"
@@ -48,16 +49,15 @@ cv::Mat imageMsgToMat(const sensor_msgs::ImageConstPtr &img_msg) {
 
 class FeatureTrackerWrapper {
 public:
-  FeatureTrackerWrapper(const std::string &calibration_file_path) {
+  FeatureTrackerWrapper(const std::string &cams_config_base_path) {
     setupPublishers();
-    initializeTrackers(calibration_file_path);
+    initializeTrackers(cams_config_base_path);
   }
 
-  void initializeTrackers(const std::string &calibration_file_path) {
+  void initializeTrackers(const std::string &cams_config_base_path) {
     for (const std::string &cam_name : CAMS) {
       camera_trackers_.insert(std::make_pair(cam_name, FeatureTracker()));
-      camera_trackers_[cam_name].readIntrinsicParameter(calibration_file_path,
-                                                        cam_name);
+      camera_trackers_[cam_name].readIntrinsicParameter(cams_config_base_path + "/" + cam_name + ".yaml");
     }
   }
 
@@ -315,33 +315,35 @@ int main(int argc, char **argv) {
   ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
                                  ros::console::levels::Info);
 
-  Options options = loadInputParameters(n);
-  options.print();
+  Options options = readParameters(n);
 
-  /* std::string calibration_file_path; */
-  /* n.getParam("vins_config_file", calibration_file_path); */
-  /* readParameters(n); */
+  // subscribers. use a message filter to software-synchronize the images and
+  // lidar
 
-  /* // subscribers. use a message filter to software-synchronize the images and */
-  /* // lidar */
-  /* message_filters::Subscriber<sensor_msgs::Image> left_img_sub( */
-  /*     n, LEFT_IMAGE_TOPIC, 10); */
-  /* message_filters::Subscriber<sensor_msgs::Image> right_img_sub( */
-  /*     n, RIGHT_IMAGE_TOPIC, 10); */
-  /* message_filters::Subscriber<sensor_msgs::PointCloud2> lidar_sub( */
-  /*     n, POINT_CLOUD_TOPIC, 10); */
+  // for now, camera callbacks have to be changed manually
+  const std::string LEFT_IMAGE_TOPIC{options.per_camera_options[0].image_topic};
+  const std::string RIGHT_IMAGE_TOPIC{options.per_camera_options[1].image_topic};
 
-  /* // initializing the feature tracker */
-  /* FeatureTrackerWrapper feature_tracker_wrapper{calibration_file_path}; */
+  message_filters::Subscriber<sensor_msgs::Image> left_img_sub( n, LEFT_IMAGE_TOPIC, 10);
+  message_filters::Subscriber<sensor_msgs::Image> right_img_sub(
+      n, RIGHT_IMAGE_TOPIC, 10);
+  message_filters::Subscriber<sensor_msgs::PointCloud2> lidar_sub(
+      n, POINT_CLOUD_TOPIC, 10);
 
-  /* // initializing message filter so we can get synchronized messages */
-  /* typedef message_filters::sync_policies::ApproximateTime< */
-  /*     sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::PointCloud2> */
-  /*     MySyncPolicy; */
-  /* message_filters::Synchronizer<MySyncPolicy> sync( */
-  /*     MySyncPolicy(10), left_img_sub, right_img_sub, lidar_sub); */
-  /* sync.registerCallback(boost::bind(&FeatureTrackerWrapper::processFrame, */
-  /*                                   &feature_tracker_wrapper, _1, _2, _3)); */
+  // initializing the feature tracker
+  std::string cams_config_base_path;
+  n.getParam("/cam_configs_dir", cams_config_base_path);
+  std::cout << "cams_config_base_path: " << cams_config_base_path << std::endl;
+  FeatureTrackerWrapper feature_tracker_wrapper{cams_config_base_path};
+
+  // initializing message filter so we can get synchronized messages
+  typedef message_filters::sync_policies::ApproximateTime<
+      sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::PointCloud2>
+      MySyncPolicy;
+  message_filters::Synchronizer<MySyncPolicy> sync(
+      MySyncPolicy(10), left_img_sub, right_img_sub, lidar_sub);
+  sync.registerCallback(boost::bind(&FeatureTrackerWrapper::processFrame,
+                                    &feature_tracker_wrapper, _1, _2, _3));
 
   ros::spin();
 

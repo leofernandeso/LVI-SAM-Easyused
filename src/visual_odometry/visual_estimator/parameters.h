@@ -52,11 +52,13 @@
 #include <thread>
 #include <mutex>
 
+#include "parameters_utils.h"
+
 const int WINDOW_SIZE = 10;
 
-
+const int NUM_OF_CAM = 2;   //  TODO: Read this dinamically from the yaml file. Right now, it is necessary to change this value manually after chaning the yaml file.
 const double FOCAL_LENGTH = 460.0;
-const int NUM_OF_CAM = 1;
+
 const int NUM_OF_F = 1000;
 // #define UNIT_SPHERE_ERROR 1
 
@@ -96,7 +98,7 @@ extern Eigen::Matrix3d R_imu_lidar;  //; R_lidar_imu, 即IMU -> LiDAR的旋转
 extern Eigen::Vector3d t_imu_lidar;
 #endif
 
-void readParameters(ros::NodeHandle &n);
+Options readParameters(ros::NodeHandle &n);
 
 enum SIZE_PARAMETERIZATION
 {

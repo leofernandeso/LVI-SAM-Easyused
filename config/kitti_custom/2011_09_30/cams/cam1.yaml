@@ -1,0 +1,52 @@
+%YAML:1.0
+
+# Project
+project_name: "lvi_sam"
+
+# Common params
+image_topic: "/kitti/camera_gray_right/image_raw"
+
+#camera calibration 
+model_type: PINHOLE
+camera_name: cam1
+image_width: 1226
+image_height: 370
+distortion_parameters:
+  k1: 0.0
+  k2: 0.0
+  p1: 0.0
+  p2: 0.0
+projection_parameters:
+  fx: 7.070912e+02
+  fy: 7.070912e+02
+  cx: 6.018873e+02
+  cy: 1.831104e+02
+
+#Rotation from camera frame to imu frame, imu^R_cam
+extrinsicRotation: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [-0.00108863, -0.00851207,  0.9999631,
+         -0.9999764, -0.00677767, -0.0011463,
+          0.00678718, -0.99994073, -0.0085044]   
+
+#Translation from camera frame to imu frame, imu^T_cam
+extrinsicTranslation: !!opencv-matrix
+   rows: 3
+   cols: 1
+   dt: d
+   data: [1.14389871, -0.31271847,  0.72654605]
+
+# Feature tracker params
+max_cnt: 400            # max feature number in feature tracking
+min_dist: 12            # min distance between two features 
+freq: 20                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
+F_threshold: 1.0        # ransac threshold (pixel)
+show_track: 1           # publish tracking image as topic
+equalize: 1             # if image is too dark or light, trun on equalize to find enough features
+fisheye: 0              # if using fisheye, trun on it. A circle mask will be loaded to remove edge noisy points
+
+#rolling shutter parameters
+rolling_shutter: 0       # 0: global shutter camera, 1: rolling shutter camera
+rolling_shutter_tr: 0    # unit: s. rolling shutter read out time per frame (from data sheet). 

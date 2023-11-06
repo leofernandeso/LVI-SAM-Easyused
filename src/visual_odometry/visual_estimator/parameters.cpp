@@ -1,4 +1,5 @@
 #include "parameters.h"
+#include "parameters_utils.h"
 
 std::string PROJECT_NAME;
 
@@ -28,96 +29,71 @@ int USE_LIDAR;
 int ALIGN_CAMERA_LIDAR_COORDINATE;
 
 
-#if IF_OFFICIAL
-
-#else
-//? add: 从params_lidar.yaml中读取的参数
 Eigen::Matrix3d R_imu_lidar = Eigen::Matrix3d::Identity(); 
 Eigen::Vector3d t_imu_lidar = Eigen::Vector3d::Zero();
-#endif
 
-void readParameters(ros::NodeHandle &n)
+Options readParameters(ros::NodeHandle &n)
 {
-    std::string config_file;
-    n.getParam("vins_config_file", config_file);
-    cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
-    if (!fsSettings.isOpened())
-    {
-        std::cerr << "ERROR: Wrong path to settings" << std::endl;
-    }
 
-    fsSettings["project_name"] >> PROJECT_NAME;
+    Options options = loadInputParameters(n);
+
+    PROJECT_NAME = "lvi_sam";
+
+    // project name
     std::string pkg_path = ros::package::getPath(PROJECT_NAME);
 
-    fsSettings["imu_topic"] >> IMU_TOPIC;
+    // IMU config
+    IMU_TOPIC = options.imu_params.imu_topic;
+    ACC_N = options.imu_params.acc_n;
+    ACC_W = options.imu_params.acc_w;
+    GYR_N = options.imu_params.gyr_n;
+    GYR_W = options.imu_params.gyr_w;
+    G.z() = options.imu_params.g.z();
 
-    fsSettings["use_lidar"] >> USE_LIDAR;
-    fsSettings["align_camera_lidar_estimation"] >> ALIGN_CAMERA_LIDAR_COORDINATE;
+    // Lidar config
+    USE_LIDAR = options.lidar_options.use;
+    
+    // estimator config
+    n.getParam(PROJECT_NAME+ "/align_camera_lidar_estimation", ALIGN_CAMERA_LIDAR_COORDINATE);
+    SOLVER_TIME = options.estimator_options.max_solver_time;
+    NUM_ITERATIONS = options.estimator_options.max_num_iterations;
+    MIN_PARALLAX = options.estimator_options.keyframe_parallax;
 
-    SOLVER_TIME = fsSettings["max_solver_time"];
-    NUM_ITERATIONS = fsSettings["max_num_iterations"];
-    MIN_PARALLAX = fsSettings["keyframe_parallax"];
-    MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
-
-    ACC_N = fsSettings["acc_n"];
-    ACC_W = fsSettings["acc_w"];
-    GYR_N = fsSettings["gyr_n"];
-    GYR_W = fsSettings["gyr_w"];
-    G.z() = fsSettings["g_norm"];
-    ROW = fsSettings["image_height"];
-    COL = fsSettings["image_width"];
+    for (const auto& cam : options.per_camera_options)
+    {
+        RIC.push_back(cam.R);
+        TIC.push_back(cam.t);
+    }
+    
+    ROW = options.per_camera_options[0].image_height;
+    COL = options.per_camera_options[0].image_width;
     ROS_INFO("Image dimention: ROW: %f COL: %f ", ROW, COL);
 
-    ESTIMATE_EXTRINSIC = fsSettings["estimate_extrinsic"];
-    if (ESTIMATE_EXTRINSIC == 2)
-    {
-        ROS_INFO("have no prior about extrinsic param, calibrate extrinsic param");
-        RIC.push_back(Eigen::Matrix3d::Identity());
-        TIC.push_back(Eigen::Vector3d::Zero());
-        EX_CALIB_RESULT_PATH = pkg_path + "/config/extrinsic_parameter.csv";
-    }
-    else
-    {
-        if (ESTIMATE_EXTRINSIC == 1)
-        {
-            ROS_INFO(" Optimize extrinsic param around initial guess!");
-            EX_CALIB_RESULT_PATH = pkg_path + "/config/extrinsic_parameter.csv";
-        }
-        if (ESTIMATE_EXTRINSIC == 0)
-            ROS_INFO(" Fix extrinsic param.");
+    ESTIMATE_EXTRINSIC = 0;       // remove support
 
-        cv::Mat cv_R, cv_T;
-        fsSettings["extrinsicRotation"] >> cv_R;
-        fsSettings["extrinsicTranslation"] >> cv_T;
-        Eigen::Matrix3d eigen_R;
-        Eigen::Vector3d eigen_T;
-        cv::cv2eigen(cv_R, eigen_R);
-        cv::cv2eigen(cv_T, eigen_T);
-        Eigen::Quaterniond Q(eigen_R);
-        eigen_R = Q.normalized();
-        RIC.push_back(eigen_R);
-        TIC.push_back(eigen_T);
+    for (int i = 0; i < NUM_OF_CAM; i++)
+    {
         ROS_INFO_STREAM("Extrinsic_R : " << std::endl
-                                         << RIC[0]);
+                                         << RIC[i]);
         ROS_INFO_STREAM("Extrinsic_T : " << std::endl
-                                         << TIC[0].transpose());
+                                         << TIC[i].transpose());
     }
 
     INIT_DEPTH = 5.0;
     BIAS_ACC_THRESHOLD = 0.1;
     BIAS_GYR_THRESHOLD = 0.1;
 
-    TD = fsSettings["td"];
-    ESTIMATE_TD = fsSettings["estimate_td"];
+    n.getParam(PROJECT_NAME+ "/td", TD);
+    ESTIMATE_TD = options.estimator_options.estimate_td;
     if (ESTIMATE_TD)
         ROS_INFO_STREAM("Unsynchronized sensors, online estimate time offset, initial td: " << TD);
     else
         ROS_INFO_STREAM("Synchronized sensors, fix time offset: " << TD);
 
-    ROLLING_SHUTTER = fsSettings["rolling_shutter"];
+    ROLLING_SHUTTER = options.per_camera_options[0].is_rolling_shutter;
     if (ROLLING_SHUTTER)
     {
-        TR = fsSettings["rolling_shutter_tr"];
+        TR = options.per_camera_options[0].rolling_shutter_readout_time;
         ROS_INFO_STREAM("rolling shutter camera, read out time per line: " << TR);
     }
     else
@@ -125,12 +101,6 @@ void readParameters(ros::NodeHandle &n)
         TR = 0;
     }
 
-    fsSettings.release();
-
-#if IF_OFFICIAL
-
-#else
-    //? add: 读取params_lidar.yaml中的参数
     std::vector<double> t_imu_lidar_V;
     std::vector<double> R_imu_lidar_V;
     n.param<std::vector<double>>(PROJECT_NAME+ "/extrinsicTranslation", t_imu_lidar_V, std::vector<double>());
@@ -144,7 +114,8 @@ void readParameters(ros::NodeHandle &n)
     std::cout << R_imu_lidar << std::endl;
     ROS_WARN_STREAM("=vins-estimator read t_imu_lidar : =====================");
     std::cout << t_imu_lidar.transpose() << std::endl;
-#endif
 
     usleep(100);
+
+    return options;
 }

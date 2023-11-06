@@ -87,7 +87,7 @@ CameraFactory::generateCamera(Camera::ModelType modelType,
 }
 
 CameraPtr
-CameraFactory::generateCameraFromYamlFile(const std::string& filename, const std::string& cam_name) const
+CameraFactory::generateCameraFromYamlFile(const std::string& filename) const
 {
     cv::FileStorage fs(filename, cv::FileStorage::READ);
 
@@ -97,11 +97,10 @@ CameraFactory::generateCameraFromYamlFile(const std::string& filename, const std
     }
 
     Camera::ModelType modelType = Camera::MEI;
-    const auto input_model_type = fs[cam_name]["model_type"];
-    if (!input_model_type.isNone())
+    if (!fs["model_type"].isNone())
     {
         std::string sModelType;
-        input_model_type >> sModelType;
+        fs["model_type"] >> sModelType;
 
         if (boost::iequals(sModelType, "kannala_brandt"))
         {
@@ -140,8 +139,9 @@ CameraFactory::generateCameraFromYamlFile(const std::string& filename, const std
     case Camera::PINHOLE:
     {
         PinholeCameraPtr camera(new PinholeCamera);
+
         PinholeCamera::Parameters params = camera->getParameters();
-        params.readFromYamlFile(filename, cam_name);
+        params.readFromYamlFile(filename);
         camera->setParameters(params);
         return camera;
     }

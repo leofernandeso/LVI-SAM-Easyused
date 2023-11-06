@@ -212,10 +212,11 @@ bool FeatureTracker::updateID(unsigned int i)
         return false;
 }
 
-void FeatureTracker::readIntrinsicParameter(const string &calib_file, const std::string& cam_name)
+void FeatureTracker::readIntrinsicParameter(const string &calib_file)
 {
     ROS_INFO("reading paramerter of camera %s", calib_file.c_str());
-    m_camera = CameraFactory::instance()->generateCameraFromYamlFile(calib_file, cam_name);
+    m_camera = CameraFactory::instance()->generateCameraFromYamlFile(calib_file);
+    std::cout << m_camera->parametersToString() << std::endl;
 }
 
 void FeatureTracker::showUndistortion(const string &name)

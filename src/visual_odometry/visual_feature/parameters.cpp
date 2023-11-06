@@ -1,7 +1,6 @@
 #include "parameters.h"
+#include "parameters_utils.h"
 
-std::string RIGHT_IMAGE_TOPIC;
-std::string LEFT_IMAGE_TOPIC;
 std::string IMU_TOPIC;
 std::string POINT_CLOUD_TOPIC;
 std::string PROJECT_NAME;
@@ -29,51 +28,36 @@ int USE_LIDAR;
 int LIDAR_SKIP;
 
 
-void readParameters(ros::NodeHandle &n)
+Options readParameters(ros::NodeHandle &n)
 {
-    std::string config_file;
-    n.getParam("vins_config_file", config_file);
-    cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
-    if(!fsSettings.isOpened())
-    {
-        std::cerr << "ERROR: Wrong path to settings" << std::endl;
-    }
+
+    Options options = loadInputParameters(n);
+
+    PROJECT_NAME = "lvi_sam";
 
     // project name
-    fsSettings["project_name"] >> PROJECT_NAME;
     std::string pkg_path = ros::package::getPath(PROJECT_NAME);
 
-    // sensor topics
-    fsSettings["left_image_topic"]       >> LEFT_IMAGE_TOPIC;
-    fsSettings["right_image_topic"]       >> RIGHT_IMAGE_TOPIC;
-    fsSettings["imu_topic"]         >> IMU_TOPIC;
-    fsSettings["point_cloud_topic"] >> POINT_CLOUD_TOPIC;
-
-    // lidar configurations
-    fsSettings["use_lidar"] >> USE_LIDAR;
-    fsSettings["lidar_skip"] >> LIDAR_SKIP;
+    // IMU config
+    IMU_TOPIC = options.imu_params.imu_topic;
+    USE_LIDAR = options.lidar_options.use;
+    LIDAR_SKIP = options.lidar_options.skip;
+    POINT_CLOUD_TOPIC = options.lidar_options.lidar_topic;
 
     // feature and image settings
-    MAX_CNT = fsSettings["max_cnt"];
-    MIN_DIST = fsSettings["min_dist"];
-    ROW = fsSettings["image_height"];
-    COL = fsSettings["image_width"];
-    FREQ = fsSettings["freq"];
-    F_THRESHOLD = fsSettings["F_threshold"];
-    SHOW_TRACK = fsSettings["show_track"];
-    EQUALIZE = fsSettings["equalize"];
+    MAX_CNT = options.feature_tracking_options.max_cnt;
+    MIN_DIST = options.feature_tracking_options.min_dist;
+    n.getParam(PROJECT_NAME+ "/freq", FREQ);
+    F_THRESHOLD = options.feature_tracking_options.f_threshold;
+    n.getParam(PROJECT_NAME+ "/show_track", FREQ);
+    EQUALIZE = options.feature_tracking_options.equalize;
 
-    // fisheye mask
-    FISHEYE = fsSettings["fisheye"];
-    if (FISHEYE == 1)
-    {
-        std::string mask_name;
-        fsSettings["fisheye_mask"] >> mask_name;
-        FISHEYE_MASK = pkg_path + mask_name;
-    }
+    ROW = options.per_camera_options[0].image_height;
+    COL = options.per_camera_options[0].image_width;
 
-    // camera config
-    CAM_NAMES.push_back(config_file);
+    // for now, use only mask of first camera
+    FISHEYE = options.per_camera_options[0].is_fisheye;
+    FISHEYE_MASK = options.per_camera_options[0].fisheye_mask_path;
 
     WINDOW_SIZE = 20;
     STEREO_TRACK = false;
@@ -82,8 +66,6 @@ void readParameters(ros::NodeHandle &n)
 
     if (FREQ == 0)
         FREQ = 100;
-
-    fsSettings.release();
 
     std::vector<double> t_imu_lidar_V;
     std::vector<double> R_imu_lidar_V;
@@ -104,6 +86,8 @@ void readParameters(ros::NodeHandle &n)
     std::cout << t_imu_lidar(0)  << ", " << t_imu_lidar(1) << ", " << t_imu_lidar(2) << std::endl;
 
     usleep(100);
+
+    return options;
 }
 
 float pointDistance(PointType p)

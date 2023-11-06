@@ -290,7 +290,7 @@ int main(int argc, char **argv)
         briefExtractor = BriefExtractor(brief_pattern_file);
 
         // initialize camera model
-        m_camera = camodocal::CameraFactory::instance()->generateCameraFromYamlFile(config_file.c_str(), "cam0");
+        m_camera = camodocal::CameraFactory::instance()->generateCameraFromYamlFile(config_file.c_str());
     }
 
     ros::Subscriber sub_image     = n.subscribe(LEFT_IMAGE_TOPIC, 30, image_callback);

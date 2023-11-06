@@ -52,6 +52,8 @@
 #include <mutex>
 #include <cassert>
 
+#include "parameters_utils.h"
+
 using namespace std;
 
 typedef pcl::PointXYZI PointType;
@@ -61,7 +63,7 @@ typedef pcl::PointXYZI PointType;
 extern int ROW;
 extern int COL;
 extern int FOCAL_LENGTH;
-const int NUM_OF_CAM = 1;
+const int NUM_OF_CAM = 2;
 
 extern std::string PROJECT_NAME;
 extern std::string RIGHT_IMAGE_TOPIC;
@@ -87,7 +89,7 @@ extern bool PUB_THIS_FRAME;
 
 extern tf::Transform Transform_imu_lidar;
 
-void readParameters(ros::NodeHandle &n);
+Options readParameters(ros::NodeHandle &n);
 
 float pointDistance(PointType p);
 
