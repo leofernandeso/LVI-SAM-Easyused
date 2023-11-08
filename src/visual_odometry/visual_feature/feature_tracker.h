@@ -30,7 +30,7 @@ class FeatureTracker
 public:
     FeatureTracker();
 
-    void readImage(const cv::Mat &_img, double _cur_time);
+    void readImage(const cv::Mat &left_img, const cv::Mat& right_img, double _cur_time);
 
     void setMask();
 
@@ -38,7 +38,7 @@ public:
 
     bool updateID(unsigned int i);
 
-    void readIntrinsicParameter(const string &calib_file);
+    void readLeftCameraParameters(const string &calib_file);
 
     void showUndistortion(const string &name);
 

@@ -78,7 +78,7 @@ void FeatureTracker::addPoints()
     }
 }
 
-void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
+void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img, double _cur_time)
 {
     cv::Mat img;
     TicToc t_r;
@@ -88,11 +88,11 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     {
         cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
         TicToc t_c;
-        clahe->apply(_img, img);
+        clahe->apply(left_img, img);
         ROS_DEBUG("CLAHE costs: %fms", t_c.toc());
     }
     else
-        img = _img;
+        img = left_img;
 
     if (forw_img.empty())
     {
@@ -110,11 +110,30 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
         TicToc t_o;
         vector<uchar> status;
         vector<float> err;
+
+        // track previous features using optical flow
         cv::calcOpticalFlowPyrLK(cur_img, forw_img, cur_pts, forw_pts, status, err, cv::Size(21, 21), 3);
 
-        for (int i = 0; i < int(forw_pts.size()); i++)
-            if (status[i] && !inBorder(forw_pts[i]))
+        // now track such features in the right image
+        vector<cv::Point2f> forw_pts_right;
+        vector<uchar> status_right;
+        cv::calcOpticalFlowPyrLK(left_img, right_img, cur_pts, forw_pts_right, status_right, err, cv::Size(21, 21), 3);
+
+        /* size_t num_tracked_in_both{0}; */
+        std::vector<double> epipolar_distances;
+        for (size_t i = 0 ; i < forw_pts.size() ; i++) {
+            auto left_pt = forw_pts[i];
+            auto right_pt = forw_pts_right[i];
+            double epipolar_distance = std::abs(left_pt.y - right_pt.y);
+            epipolar_distances.push_back(epipolar_distance); 
+        }
+
+        for (size_t i = 0; i < forw_pts.size(); i++) {
+            if (status[i] == 1 && (!inBorder(forw_pts[i]) || epipolar_distances[i] > 10.0)) {
                 status[i] = 0;
+            }
+        }
+
         reduceVector(prev_pts, status);
         reduceVector(cur_pts, status);
         reduceVector(forw_pts, status);
@@ -213,7 +232,7 @@ bool FeatureTracker::updateID(unsigned int i)
         return false;
 }
 
-void FeatureTracker::readIntrinsicParameter(const string &calib_file)
+void FeatureTracker::readLeftCameraParameters(const string &calib_file)
 {
     ROS_INFO("reading paramerter of camera %s", calib_file.c_str());
     m_camera = CameraFactory::instance()->generateCameraFromYamlFile(calib_file);

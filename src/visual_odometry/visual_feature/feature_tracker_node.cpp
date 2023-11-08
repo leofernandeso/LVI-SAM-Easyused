@@ -112,61 +112,13 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
 
     cv::Mat show_img = ptr->image;
+    auto right_img = right_img_ptr->image;
     TicToc t_r;
-    std::vector<size_t> ids;
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
         if (i != 1 || !STEREO_TRACK) {
-            trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)), cur_img_time);
+            trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)), right_img, cur_img_time);
             auto current_left_pts = trackerData[i].cur_pts;
-
-            auto right_img = right_img_ptr->image;
-            std::vector<cv::Point2f> right_pts;
-            std::vector<uchar> status;
-            std::vector<float> err;
-            cv::calcOpticalFlowPyrLK(show_img, right_img, current_left_pts, right_pts, status, err, cv::Size(21, 21), 3);
-
-            /* cv::Mat img_clone = show_img.clone(); */
-            /* for (int j = 0; j < current_left_pts.size(); j++) { */
-            /*     cv::circle(img_clone, current_left_pts[j], 4, cv::Scalar(0, 255, 0), 4); */
-            /* } */
-            /* cv::imshow("left", img_clone); */
-            /* cv::waitKey(1); */
-
-
-            /* for (int j = 0; j < right_pts.size(); j++) { */
-            /*     cv::circle(right_img, right_pts[j], 4, cv::Scalar(0, 255, 0), 4); */
-            /* } */
-            /* cv::imshow("right", right_img); */
-            /* cv::waitKey(1); */
-
-            // computing epipolar distance between matches
-            std::vector<float> epipolar_distances;
-            for (int j = 0; j < current_left_pts.size(); j++) {
-                float epipolar_distance = abs(current_left_pts[j].y - right_pts[j].y);
-                epipolar_distances.push_back(epipolar_distance);
-            }
-
-            float mean_epipolar_distance = std::accumulate(epipolar_distances.begin(), epipolar_distances.end(), 0.0) / epipolar_distances.size();
-            float std_epipolar_distance = 0.0;
-            for (int j = 0; j < epipolar_distances.size(); j++) {
-                std_epipolar_distance += pow(epipolar_distances[j] - mean_epipolar_distance, 2);
-            }
-            std_epipolar_distance = sqrt(std_epipolar_distance / epipolar_distances.size());
-            
-            for (int j = 0; j < current_left_pts.size(); j++) {
-                if (abs(current_left_pts[j].y - right_pts[j].y) < mean_epipolar_distance + 2 * std_epipolar_distance) {
-                    ids.push_back(j);
-                }
-            }
-            
-            // Show result for filtered left image
-            /* cv::Mat img_clone_filtered = show_img.clone(); */
-            /* for (int j = 0; j < filtered_left_pts.size(); j++) { */
-            /*     cv::circle(img_clone_filtered, filtered_left_pts[j], 4, cv::Scalar(0, 0, 255), 4); */
-            /* } */
-            /* cv::imshow("left filtered", img_clone_filtered); */
-            /* cv::waitKey(1); */
             
         }
         else
@@ -213,7 +165,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         {
             auto &un_pts = trackerData[i].cur_un_pts;
             auto &cur_pts = trackerData[i].cur_pts;
-            /* auto &ids = trackerData[i].ids; */
+            auto &ids = trackerData[i].ids;
             ROS_WARN("ids size: %d", ids.size());
             auto &pts_velocity = trackerData[i].pts_velocity;
             for (unsigned int j = 0; j < ids.size(); j++)
@@ -273,7 +225,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                 cv::Mat tmp_img = stereo_img.rowRange(i * ROW, (i + 1) * ROW);
                 cv::cvtColor(show_img, tmp_img, CV_GRAY2RGB);
 
-                for (unsigned int j = 0; j < ids.size(); j++)
+                for (unsigned int j = 0; j < trackerData[i].cur_pts.size(); j++)
                 {
                     if (SHOW_TRACK)
                     {
@@ -307,23 +259,14 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 
     // 0. listen to transform
     static tf::TransformListener listener;
-#if IF_OFFICIAL
-    static tf::StampedTransform transform;   //; T_vinsworld_camera_FLU
-#else
     static tf::StampedTransform transform_world_cFLU;   //; T_vinsworld_camera_FLU
     static tf::StampedTransform transform_cFLU_imu;    //; T_cameraFLU_imu
-#endif
     try{
-    #if IF_OFFICIAL
-        listener.waitForTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, ros::Duration(0.01));
-        listener.lookupTransform("vins_world", "vins_body_ros", laser_msg->header.stamp, transform);
-    #else   
         //? mod: 监听T_vinsworld_cameraFLU 和 T_cameraFLU_imu
         listener.waitForTransform("vins_world", "vins_cameraFLU", laser_msg->header.stamp, ros::Duration(0.01));
         listener.lookupTransform("vins_world", "vins_cameraFLU", laser_msg->header.stamp, transform_world_cFLU);
         listener.waitForTransform("vins_cameraFLU", "vins_body_imuhz", laser_msg->header.stamp, ros::Duration(0.01));
         listener.lookupTransform("vins_cameraFLU", "vins_body_imuhz", laser_msg->header.stamp, transform_cFLU_imu);
-    #endif
     } 
     catch (tf::TransformException ex){
         // ROS_ERROR("lidar no tf");
@@ -331,17 +274,11 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     }
 
     double xCur, yCur, zCur, rollCur, pitchCur, yawCur;
-#if IF_OFFICIAL
-    xCur = transform.getOrigin().x();
-    yCur = transform.getOrigin().y();
-    zCur = transform.getOrigin().z();
-    tf::Matrix3x3 m(transform.getRotation());
-#else
     xCur = transform_world_cFLU.getOrigin().x();
     yCur = transform_world_cFLU.getOrigin().y();
     zCur = transform_world_cFLU.getOrigin().z();
     tf::Matrix3x3 m(transform_world_cFLU.getRotation());
-#endif
+
     m.getRPY(rollCur, pitchCur, yawCur);
     //; T_vinswolrd_cameraFLU
     Eigen::Affine3f transNow = pcl::getTransformation(xCur, yCur, zCur, rollCur, pitchCur, yawCur);
@@ -358,13 +295,6 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     downSizeFilter.filter(*laser_cloud_in_ds);
     *laser_cloud_in = *laser_cloud_in_ds;
 
-    // 3. 把lidar坐标系下的点云转到相机的FLU坐标系下表示，因为下一步需要使用相机FLU坐标系下的点云进行初步过滤
-#if IF_OFFICIAL
-    pcl::PointCloud<PointType>::Ptr laser_cloud_offset(new pcl::PointCloud<PointType>());
-    Eigen::Affine3f transOffset = pcl::getTransformation(L_C_TX, L_C_TY, L_C_TZ, L_C_RX, L_C_RY, L_C_RZ);
-    pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_offset, transOffset);
-    *laser_cloud_in = *laser_cloud_offset;
-#else
     pcl::PointCloud<PointType>::Ptr laser_cloud_offset(new pcl::PointCloud<PointType>());
     //; T_cFLU_lidar
     tf::Transform transform_cFLU_lidar = transform_cFLU_imu * Transform_imu_lidar;
@@ -377,7 +307,6 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     //; lidar本体坐标系下的点云，转到相机FLU坐标系下表示
     pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_offset, transOffset);
     *laser_cloud_in = *laser_cloud_offset;
-#endif
 
     // 4. filter lidar points (only keep points in camera view)
     //; 根据已经转到相机FLU坐标系下的点云，先排除不在相机FoV内的点云
@@ -436,8 +365,9 @@ int main(int argc, char **argv)
     readParameters(n);
 
     // read camera params
-    for (int i = 0; i < NUM_OF_CAM; i++)
-        trackerData[i].readIntrinsicParameter(CAM_NAMES[i]);
+    for (int i = 0; i < NUM_OF_CAM; i++) {
+        trackerData[i].readLeftCameraParameters(CAM_NAMES[i]);
+    }
 
     // load fisheye mask to remove features on the boundry
     if(FISHEYE)
@@ -471,8 +401,8 @@ int main(int argc, char **argv)
     pub_match   = n.advertise<sensor_msgs::Image>     (PROJECT_NAME + "/vins/feature/feature_img", 5);
     pub_restart = n.advertise<std_msgs::Bool>         (PROJECT_NAME + "/vins/feature/restart",     5);
 
-    // two ROS spinners for parallel processing (image and lidar)
-    ros::MultiThreadedSpinner spinner(2);
+    // two ROS spinners for parallel processing (images and lidar)
+    ros::MultiThreadedSpinner spinner(3);
     spinner.spin();
 
     return 0;
