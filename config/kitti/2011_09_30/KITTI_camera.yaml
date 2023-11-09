@@ -41,7 +41,8 @@ g_norm: 9.805       #
 estimate_extrinsic: 0   # 0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.
                         # 1  Have an initial guess about extrinsic parameters. We will optimize around your initial guess.
                         # 2  Don't know anything about extrinsic parameters. You don't need to give R,T. We will try to calibrate it. Do some rotation movement at beginning. 
-#Rotation from camera frame to imu frame, imu^R_cam
+
+#Rotation from left camera frame to imu frame, imu^R_cam
 extrinsicRotation: !!opencv-matrix
    rows: 3
    cols: 3
@@ -57,8 +58,21 @@ extrinsicTranslation: !!opencv-matrix
    dt: d
    data: [1.14389871, -0.31271847,  0.72654605]
 
+# Projection matrices for possible stereo triangulation
+leftCameraProjectionMatrix: !!opencv-matrix
+  rows: 3
+  cols: 4
+  dt: d
+  data: [707.0912, 0.0, 601.8873, 0.0, 0.0, 707.0912, 183.1104, 0.0, 0.0, 0.0, 1.0, 0.0]
+
+rightCameraProjectionMatrix: !!opencv-matrix
+  rows: 3
+  cols: 4
+  dt: d
+  data: [707.0912, 0.0, 601.8873, -379.8145, 0.0, 707.0912, 183.1104, 0.0, 0.0, 0.0, 1.0, 0.0]
+
 #feature traker paprameters
-max_cnt: 300            # max feature number in feature tracking
+max_cnt: 150            # max feature number in feature tracking
 min_dist: 10            # min distance between two features 
 freq: 20                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
 F_threshold: 1.0        # ransac threshold (pixel)

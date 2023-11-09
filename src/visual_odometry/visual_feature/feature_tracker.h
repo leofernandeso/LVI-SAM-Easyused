@@ -40,21 +40,33 @@ public:
 
     void readLeftCameraParameters(const string &calib_file);
 
+    void setLeftCameraProjectionMatrix(const cv::Mat& P);
+
+    void setRightCameraProjectionMatrix(const cv::Mat& P);
+    
+    void printProjectionMatrices() const;
+
     void showUndistortion(const string &name);
 
     void rejectWithF();
+
+    void rejectWithEpipolarConstraint();
 
     void undistortedPoints();
 
     cv::Mat mask;
     cv::Mat fisheye_mask;
-    cv::Mat prev_img, cur_img, forw_img;
-    vector<cv::Point2f> n_pts;
-    vector<cv::Point2f> prev_pts, cur_pts, forw_pts;
-    vector<cv::Point2f> prev_un_pts, cur_un_pts;
+    cv::Mat prev_left_img, cur_left_img, forw_left_img;
+    cv::Mat prev_right_img, cur_right_img, forw_right_img;
+    cv::Mat left_cam_P_, right_cam_P_;
+    vector<cv::Point2f> n_pts_left, n_pts_right;
+    vector<cv::Point2f> prev_left_pts, cur_left_pts, forw_left_pts;
+    vector<cv::Point2f> prev_right_pts, cur_right_pts, forw_right_pts;
+    vector<cv::Point2f> prev_undist_left_pts, cur_undist_left_pts;
+    vector<cv::Point2f> prev_undist_right_pts, cur_undist_right_pts;
     vector<cv::Point2f> pts_velocity;
-    vector<int> ids;
-    vector<int> track_cnt;
+    vector<int> ids_left, ids_right;
+    vector<int> track_cnt_left, track_cnt_right;
     map<int, cv::Point2f> cur_un_pts_map;
     map<int, cv::Point2f> prev_un_pts_map;
     camodocal::CameraPtr m_camera;

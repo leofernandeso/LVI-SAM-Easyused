@@ -55,6 +55,19 @@ void right_img_callback(const sensor_msgs::ImageConstPtr& img_msg) {
   ROS_WARN("Got right image!");
 }
 
+cv::Mat readMatrixFromFile(const std::string& filepath, const std::string& key) {
+    cv::FileStorage file(filepath, cv::FileStorage::READ);
+    if(!file.isOpened())
+    {
+        std::cerr << "ERROR: readMatrixFromFile - could not read: " << filepath << std::endl;
+    }
+    
+    cv::Mat matrix;
+    file[key] >> matrix;
+    file.release();
+    return matrix;
+}
+
 void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 {
     double cur_img_time = img_msg->header.stamp.toSec();
@@ -118,7 +131,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
     {
         if (i != 1 || !STEREO_TRACK) {
             trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)), right_img, cur_img_time);
-            auto current_left_pts = trackerData[i].cur_pts;
+            auto current_left_pts = trackerData[i].cur_left_pts;
             
         }
         else
@@ -126,10 +139,10 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
             if (EQUALIZE)
             {
                 cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
-                clahe->apply(ptr->image.rowRange(ROW * i, ROW * (i + 1)), trackerData[i].cur_img);
+                clahe->apply(ptr->image.rowRange(ROW * i, ROW * (i + 1)), trackerData[i].cur_right_img);
             }
             else
-                trackerData[i].cur_img = ptr->image.rowRange(ROW * i, ROW * (i + 1));
+                trackerData[i].cur_right_img = ptr->image.rowRange(ROW * i, ROW * (i + 1));
         }
 
         #if SHOW_UNDISTORTION
@@ -163,16 +176,16 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         vector<set<int>> hash_ids(NUM_OF_CAM);
         for (int i = 0; i < NUM_OF_CAM; i++)
         {
-            auto &un_pts = trackerData[i].cur_un_pts;
-            auto &cur_pts = trackerData[i].cur_pts;
-            auto &ids = trackerData[i].ids;
-            ROS_WARN("ids size: %d", ids.size());
+            auto &un_pts = trackerData[i].cur_undist_left_pts;
+            auto &cur_pts = trackerData[i].cur_left_pts;
+            auto &ids_left = trackerData[i].ids_left;
+            ROS_WARN("ids size: %d", ids_left.size());
             auto &pts_velocity = trackerData[i].pts_velocity;
-            for (unsigned int j = 0; j < ids.size(); j++)
+            for (unsigned int j = 0; j < ids_left.size(); j++)
             {
-                if (trackerData[i].track_cnt[j] > 1)
+                if (trackerData[i].track_cnt_left[j] > 1)
                 {
-                    int p_id = ids[j];
+                    int p_id = ids_left[j];
                     hash_ids[i].insert(p_id);
                     geometry_msgs::Point32 p;
                     p.x = un_pts[j].x;
@@ -225,21 +238,21 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                 cv::Mat tmp_img = stereo_img.rowRange(i * ROW, (i + 1) * ROW);
                 cv::cvtColor(show_img, tmp_img, CV_GRAY2RGB);
 
-                for (unsigned int j = 0; j < trackerData[i].cur_pts.size(); j++)
+                for (unsigned int j = 0; j < trackerData[i].cur_left_pts.size(); j++)
                 {
                     if (SHOW_TRACK)
                     {
                         // track count
-                        double len = std::min(1.0, 1.0 * trackerData[i].track_cnt[j] / WINDOW_SIZE);
-                        cv::circle(tmp_img, trackerData[i].cur_pts[j], 4, cv::Scalar(255 * (1 - len), 255 * len, 0), 4);
+                        double len = std::min(1.0, 1.0 * trackerData[i].track_cnt_left[j] / WINDOW_SIZE);
+                        cv::circle(tmp_img, trackerData[i].cur_left_pts[j], 4, cv::Scalar(255 * (1 - len), 255 * len, 0), 4);
                     } else {
                         // depth 
                         if(j < depth_of_points.values.size())
                         {
                             if (depth_of_points.values[j] > 0)
-                                cv::circle(tmp_img, trackerData[i].cur_pts[j], 4, cv::Scalar(0, 255, 0), 4);
+                                cv::circle(tmp_img, trackerData[i].cur_left_pts[j], 4, cv::Scalar(0, 255, 0), 4);
                             else
-                                cv::circle(tmp_img, trackerData[i].cur_pts[j], 4, cv::Scalar(0, 0, 255), 4);
+                                cv::circle(tmp_img, trackerData[i].cur_left_pts[j], 4, cv::Scalar(0, 0, 255), 4);
                         }
                     }
                 }
@@ -368,6 +381,10 @@ int main(int argc, char **argv)
     for (int i = 0; i < NUM_OF_CAM; i++) {
         trackerData[i].readLeftCameraParameters(CAM_NAMES[i]);
     }
+
+    // reading projection matrices
+    trackerData[0].setLeftCameraProjectionMatrix(readMatrixFromFile(CAM_NAMES[0], "leftCameraProjectionMatrix"));
+    trackerData[0].setRightCameraProjectionMatrix(readMatrixFromFile(CAM_NAMES[0], "rightCameraProjectionMatrix"));
 
     // load fisheye mask to remove features on the boundry
     if(FISHEYE)
