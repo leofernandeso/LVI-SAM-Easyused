@@ -214,7 +214,6 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         *depth_cloud_temp = *depthCloud;
         mtx_lidar.unlock();
 
-        std::cout << "Estimating depth for " << feature_points->points.size() << " points" << std::endl;
         sensor_msgs::ChannelFloat32 depth_of_points = depthRegister->get_depth(img_msg->header.stamp, show_img, depth_cloud_temp, trackerData[0].m_camera, feature_points->points);
         feature_points->channels.push_back(depth_of_points);
         
@@ -374,7 +373,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "vins");
     ros::NodeHandle n;
     ROS_INFO("\033[1;32m----> Visual Feature Tracker Started.\033[0m");
-    ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Warn);
+    ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
     readParameters(n);
 
     // read camera params

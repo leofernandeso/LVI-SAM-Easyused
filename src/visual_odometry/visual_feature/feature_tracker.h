@@ -59,7 +59,7 @@ public:
     cv::Mat prev_left_img, cur_left_img, forw_left_img;
     cv::Mat prev_right_img, cur_right_img, forw_right_img;
     cv::Mat left_cam_P_, right_cam_P_;
-    vector<cv::Point2f> n_pts_left, n_pts_right;
+    vector<cv::Point2f> new_tracked_points_left, new_tracked_points_right;
     vector<cv::Point2f> prev_left_pts, cur_left_pts, forw_left_pts;
     vector<cv::Point2f> prev_right_pts, cur_right_pts, forw_right_pts;
     vector<cv::Point2f> prev_undist_left_pts, cur_undist_left_pts;

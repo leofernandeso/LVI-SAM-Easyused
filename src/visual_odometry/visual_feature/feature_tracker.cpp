@@ -1,4 +1,5 @@
 #include "feature_tracker.h"
+#include <opencv2/core/types.hpp>
 
 int FeatureTracker::n_id = 0;
 
@@ -70,17 +71,20 @@ void FeatureTracker::setMask()
 
 void FeatureTracker::addPoints()
 {
-    for (auto &p : n_pts_left)
+    for (auto &p : new_tracked_points_left)
     {
         forw_left_pts.push_back(p);
         ids_left.push_back(-1);
         track_cnt_left.push_back(1);
     }
-    for (auto& p : n_pts_right) {
+    for (auto& p : new_tracked_points_right) {
         forw_right_pts.push_back(p);
         ids_right.push_back(-1);
         track_cnt_right.push_back(1);
     }
+
+    new_tracked_points_left.clear();
+    new_tracked_points_right.clear();
 }
 
 void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img, double _cur_time)
@@ -114,6 +118,7 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
     }
 
     forw_left_pts.clear();
+    forw_right_pts.clear();
 
     if (cur_left_pts.size() > 0)
     {
@@ -137,6 +142,15 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
         reduceVector(ids_left, status_left);
         reduceVector(cur_undist_left_pts, status_left);
         reduceVector(track_cnt_left, status_left);
+
+        // remove features that weren't tracked in the left image
+        reduceVector(prev_right_pts, status_left);
+        reduceVector(cur_right_pts, status_left);
+        reduceVector(forw_right_pts, status_left);
+        reduceVector(ids_right, status_left);
+        reduceVector(cur_undist_right_pts, status_left);
+        reduceVector(track_cnt_right, status_left);
+
         ROS_DEBUG("temporal optical flow costs: %fms", t_o.toc());
     }
 
@@ -149,6 +163,7 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
     if (PUB_THIS_FRAME)
     {
         rejectWithF();
+        /* rejectWithEpipolarConstraint(); */
         ROS_DEBUG("set mask begins");
         TicToc t_m;
         setMask();
@@ -156,6 +171,8 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
 
         ROS_DEBUG("detect feature begins");
         TicToc t_t;
+
+        // computing how many features are missing
         int n_max_cnt = MAX_CNT - static_cast<int>(forw_left_pts.size());
         if (n_max_cnt > 0)
         {
@@ -167,16 +184,32 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
                 cout << "wrong size " << endl;
 
             // generate new features for the left image
-            cv::goodFeaturesToTrack(forw_left_img, n_pts_left, MAX_CNT - forw_left_pts.size(), 0.01, MIN_DIST, mask);
+            std::vector<cv::Point2f> n_pts_left_before_filtering, n_pts_right_before_filtering;
+            cv::goodFeaturesToTrack(forw_left_img, n_pts_left_before_filtering, MAX_CNT - forw_left_pts.size(), 0.01, MIN_DIST, mask);
+            std::cout << "n_pts_left_before_filtering size: " << n_pts_left_before_filtering.size() << std::endl;
+
             // find them in the rigt image using optical flow
             vector<uchar> status_right;
             vector<float> err_right;
-            cv::calcOpticalFlowPyrLK(forw_left_img, forw_right_img, n_pts_left, n_pts_right, status_right, err_right, cv::Size(21, 21), 3);
+            cv::calcOpticalFlowPyrLK(forw_left_img, forw_right_img, n_pts_left_before_filtering, n_pts_right_before_filtering, status_right, err_right, cv::Size(21, 21), 3);
+
+            // add only new points which satisfy the rectified epipolar constraint
+            for (size_t i = 0 ; i < n_pts_right_before_filtering.size() ; ++i) {
+                auto left_pt = n_pts_left_before_filtering[i];
+                auto right_pt = n_pts_right_before_filtering[i];
+                double epipolar_distance = std::abs(left_pt.y - right_pt.y);
+                if (status_right[i] == 1 && inBorder(left_pt) && inBorder(right_pt) && epipolar_distance < 1.0) {
+                    new_tracked_points_left.push_back(left_pt);
+                    new_tracked_points_right.push_back(right_pt);
+                }
+            }
+
+            ROS_INFO("Rejected %lu new points with epipolar constraint", n_pts_left_before_filtering.size() - new_tracked_points_left.size());
 
         }
         else {
-            n_pts_left.clear();
-            n_pts_right.clear();
+            new_tracked_points_left.clear();
+            new_tracked_points_right.clear();
         }
         ROS_DEBUG("detect feature costs: %fms", t_t.toc());
 
@@ -235,12 +268,22 @@ void FeatureTracker::rejectWithF()
         vector<uchar> status;
         cv::findFundamentalMat(un_cur_pts, un_forw_pts, cv::FM_RANSAC, F_THRESHOLD, 0.99, status);
         int size_a = cur_left_pts.size();
+
         reduceVector(prev_left_pts, status);
         reduceVector(cur_left_pts, status);
         reduceVector(forw_left_pts, status);
         reduceVector(cur_undist_left_pts, status);
         reduceVector(ids_left, status);
         reduceVector(track_cnt_left, status);
+
+        // also remove from the right image feature set
+        reduceVector(prev_right_pts, status);
+        reduceVector(cur_right_pts, status);
+        reduceVector(forw_right_pts, status);
+        reduceVector(ids_right, status);
+        reduceVector(cur_undist_right_pts, status);
+        reduceVector(track_cnt_right, status);
+
         ROS_DEBUG("FM ransac: %d -> %lu: %f", size_a, forw_left_pts.size(), 1.0 * forw_left_pts.size() / size_a);
         ROS_DEBUG("FM ransac costs: %fms", t_f.toc());
     }
@@ -248,21 +291,34 @@ void FeatureTracker::rejectWithF()
 
 void FeatureTracker::rejectWithEpipolarConstraint() {
 
-    // now track such features in the right image
-    /* vector<cv::Point2f> forw_pts_right; */
-    /* vector<uchar> status_right; */
-    /* cv::calcOpticalFlowPyrLK(left_img, right_img, cur_left_pts, forw_pts_right, status_right, err, cv::Size(21, 21), 3); */
+    /* // show left and right images with forward features */
+    /* cv::Mat left_img = forw_left_img.clone(); */
+    /* cv::Mat right_img = forw_right_img.clone(); */
+    /* for (auto& pt : forw_left_pts) { */
+    /*     cv::circle(left_img, pt, 2, cv::Scalar(0, 0, 255), -1); */
+    /* } */
+    /* for (auto& pt : forw_right_pts) { */
+    /*     cv::circle(right_img, pt, 2, cv::Scalar(0, 0, 255), -1); */
+    /* } */
+    /* cv::imshow("left", left_img); */
+    /* cv::imshow("right", right_img); */
+    /* cv::waitKey(0); */
 
-    /* /1* size_t num_tracked_in_both{0}; *1/ */
-    /* std::vector<double> epipolar_distances; */
+    /* size_t violations{0}; */
+    /* std::vector<size_t> good_ixs; */
     /* for (size_t i = 0 ; i < forw_left_pts.size() ; i++) { */
     /*     auto left_pt = forw_left_pts[i]; */
-    /*     auto right_pt = forw_pts_right[i]; */
+    /*     auto right_pt = forw_right_pts[i]; */
     /*     double epipolar_distance = std::abs(left_pt.y - right_pt.y); */
-    /*     epipolar_distances.push_back(epipolar_distance); */ 
+    /*     if (epipolar_distance > 1.0) { */
+    /*         std::cout << "Epipolar constraint violated: " << epipolar_distance << std::endl; */
+    /*         violations++; */
+    /*     } else { */
+    /*         good_ixs.push_back(i); */
+    /*     } */
     /* } */
 
-
+    /* ROS_INFO("Epipolar constraint violations: %lu", violations); */
 
 }
 
