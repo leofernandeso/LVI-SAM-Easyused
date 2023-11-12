@@ -11,4 +11,6 @@
     <include file="$(find lvi_sam)/launch/include/module_rviz.launch" />
     <!--- SAM -->
     <include file="$(find lvi_sam)/launch/include/module_sam.launch" />
+
+    <node pkg="3d_line_detector" type="3d_line_detector" name="line_detector" output="screen" respawn="true" />
 </launch>

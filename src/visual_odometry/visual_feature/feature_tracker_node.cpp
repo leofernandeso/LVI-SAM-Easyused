@@ -1,4 +1,6 @@
 #include "feature_tracker.h"
+#include "pcl_conversions/pcl_conversions.h"
+#include "sensor_msgs/PointCloud2.h"
 
 #define SHOW_UNDISTORTION 0
 
@@ -20,6 +22,7 @@ DepthRegister *depthRegister;
 ros::Publisher pub_feature;
 ros::Publisher pub_match;
 ros::Publisher pub_restart;
+ros::Publisher pub_cloud_camera_frustrum;
 
 // feature tracker variables
 FeatureTracker trackerData[NUM_OF_CAM];
@@ -347,6 +350,18 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
     downSizeFilter.setInputCloud(depthCloud);
     downSizeFilter.filter(*depthCloudDS);
     *depthCloud = *depthCloudDS;
+
+    // transform stacked depth cloud to camera frame
+    pcl::PointCloud<PointType>::Ptr depthCloudCamera(new pcl::PointCloud<PointType>());
+    pcl::transformPointCloud(*depthCloud, *depthCloudCamera, transNow.inverse());
+
+    // publish
+    sensor_msgs::PointCloud2 depthCloudMsg;
+    pcl::toROSMsg(*depthCloudCamera, depthCloudMsg);
+    depthCloudMsg.header = laser_msg->header;
+    depthCloudMsg.header.frame_id = "vins_cameraFLU";
+    pub_cloud_camera_frustrum.publish(depthCloudMsg);
+
 }
 
 int main(int argc, char **argv)
@@ -389,6 +404,7 @@ int main(int argc, char **argv)
 
     // messages to vins estimator
     pub_feature = n.advertise<sensor_msgs::PointCloud>(PROJECT_NAME + "/vins/feature/feature",     5);
+    pub_cloud_camera_frustrum = n.advertise<sensor_msgs::PointCloud2>(PROJECT_NAME + "/vins/cloud_camera_frustrum", 5);
     pub_match   = n.advertise<sensor_msgs::Image>     (PROJECT_NAME + "/vins/feature/feature_img", 5);
     pub_restart = n.advertise<std_msgs::Bool>         (PROJECT_NAME + "/vins/feature/restart",     5);
 
