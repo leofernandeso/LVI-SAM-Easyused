@@ -781,8 +781,8 @@ void Estimator::optimization()
                 problem.AddResidualBlock(f_td, loss_function, para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index], para_Td[0]);
                 
                 // depth is obtained from lidar, skip optimizing it
-                if (it_per_id.lidar_depth_flag == true)
-                    problem.SetParameterBlockConstant(para_Feature[feature_index]);
+                /* if (it_per_id.lidar_depth_flag == true) */
+                /*     problem.SetParameterBlockConstant(para_Feature[feature_index]); */
             }
             else
             {
@@ -790,8 +790,8 @@ void Estimator::optimization()
                 problem.AddResidualBlock(f, loss_function, para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index]);
 
                 // depth is obtained from lidar, skip optimizing it
-                if (it_per_id.lidar_depth_flag == true)
-                    problem.SetParameterBlockConstant(para_Feature[feature_index]);
+                /* if (it_per_id.lidar_depth_flag == true) */
+                /*     problem.SetParameterBlockConstant(para_Feature[feature_index]); */
             }
             f_m_cnt++;
         }

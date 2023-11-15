@@ -12,4 +12,7 @@
     <include file="$(find lvi_sam)/launch/include/module_rviz.launch" />
     <!--- SAM -->
     <include file="$(find lvi_sam)/launch/include/module_sam.launch" />
+
+    <!--- run python node inside depthmap_densifier -->
+    <!-- <node pkg="depthmap_densifier" type="completer.py" name="completer.py" output="screen" /> -->
 </launch>

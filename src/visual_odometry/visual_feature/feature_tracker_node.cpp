@@ -1,26 +1,31 @@
+#include "camera_models/Camera.h"
+#include "camera_models/PinholeCamera.h"
 #include "feature_tracker.h"
+#include <opencv2/core/eigen.hpp>
+#include "sensor_msgs/ChannelFloat32.h"
 #include "sensor_msgs/Image.h"
+#include "sensor_msgs/image_encodings.h"
 
 #define SHOW_UNDISTORTION 0
 
 
-// mtx lock for two threads
-std::mutex mtx_lidar;
+const std::string DENSE_DEPTH_MAP_TOPIC = "/dense_depth_map";
 
-// global variable for saving the depthCloud shared between two threads
-pcl::PointCloud<PointType>::Ptr depthCloud(new pcl::PointCloud<PointType>());
+// mtx lock for two threads
+std::mutex lidar_mtx;
+
+// global variable for saving the point cloud
+pcl::PointCloud<PointType>::Ptr point_cloud_ptr(new pcl::PointCloud<PointType>());
 
 // global variables saving the lidar point cloud
 deque<pcl::PointCloud<PointType>> cloudQueue;
 deque<double> timeQueue;
 
-// global depth register for obtaining depth of a feature
-DepthRegister *depthRegister;
-
 // feature publisher for VINS estimator
 ros::Publisher pub_feature;
 ros::Publisher pub_match;
 ros::Publisher pub_restart;
+ros::Publisher depth_map_pub;
 
 // feature tracker variables
 FeatureTracker trackerData[NUM_OF_CAM];
@@ -31,6 +36,70 @@ double last_image_time = 0;
 bool init_pub = 0;
 
 cv_bridge::CvImagePtr right_img_ptr;
+cv_bridge::CvImagePtr left_img_ptr;
+cv::Mat dense_depth_map;
+
+Eigen::Matrix4d T_cam_lidar;
+
+cv::Mat getDepthMapFromLidarScan(const pcl::PointCloud<PointType>::Ptr& points, const cv::Mat& image, const Eigen::Matrix4d& T, const CameraPtr& camera_ptr) {
+
+  auto height = camera_ptr->imageHeight();
+  auto width = camera_ptr->imageWidth();
+
+  // project points to image
+  lidar_mtx.lock();
+  pcl::PointCloud<PointType>::Ptr transformed_cloud(new pcl::PointCloud<PointType>());
+  pcl::transformPointCloud(*points, *transformed_cloud, T);
+  lidar_mtx.unlock();
+
+  auto rvec = cv::Mat::zeros(3, 1, CV_64FC1);
+  auto tvec = cv::Mat::zeros(3, 1, CV_64FC1);
+  
+  std::vector<cv::Point3f> points_cv;
+  for (int i = 0; i < transformed_cloud->size(); i++) {
+    auto p = transformed_cloud->points[i];
+    points_cv.push_back(cv::Point3f(p.x, p.y, p.z));
+  }
+
+  std::vector<cv::Point2f> projected_points;
+  camera_ptr->projectPoints(points_cv, rvec, tvec, projected_points);
+
+  // initialize depth map as -1
+  cv::Mat depth_map = cv::Mat::ones(image.rows, image.cols, CV_32FC1) * -1.;
+  for (size_t i = 0 ; i < projected_points.size(); i++) {
+    auto p = projected_points[i];
+    auto depth = points_cv[i].z;
+    if (depth > 0 && p.x >= 0 && p.x < width && p.y >= 0 && p.y < height) {
+      auto row = static_cast<int>(p.y);
+      auto col = static_cast<int>(p.x);
+      depth_map.at<float>(row, col) = depth;
+    }
+  }
+
+  // show depth map
+  /* cv::Mat depth_map_show; */
+  /* cv::normalize(depth_map, depth_map_show, 0, 1, cv::NORM_MINMAX); */
+  /* cv::imshow("depth map", depth_map_show); */
+  /* cv::waitKey(1); */
+
+  return depth_map;
+
+  /* // draw points on image, using 3D depth as color */
+  /* cv::Mat color_image; */
+  /* cv::cvtColor(image, color_image, CV_GRAY2RGB); */
+  /* for (int i = 0; i < projected_points.size(); i++) { */
+  /*   auto p = projected_points[i]; */
+  /*   auto depth = transformed_cloud->points[i].z; */
+  /*   std::cout << "depth: " << depth << std::endl; */
+  /*   if (depth > 0) { */
+  /*     cv::circle(color_image, p, 1, cv::Scalar(0, 0, static_cast<int>(255 * depth/25.)), 1); */
+  /*   } */
+  /* } */
+
+  /* cv::imshow("projected points", color_image); */
+  /* cv::waitKey(1); */
+
+}
 
 void right_img_callback(const sensor_msgs::ImageConstPtr& img_msg) {
 
@@ -70,6 +139,11 @@ cv::Mat readMatrixFromFile(const std::string& filepath, const std::string& key) 
 
 void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 {
+
+
+    // convert img_msg to cv::Mat
+    cv::Mat color_left_image = cv_bridge::toCvShare(img_msg, "bgr8")->image;
+
     double cur_img_time = img_msg->header.stamp.toSec();
 
     if(first_image_flag)
@@ -125,6 +199,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
 
     cv::Mat show_img = ptr->image;
+
     auto right_img = right_img_ptr->image;
     TicToc t_r;
     for (int i = 0; i < NUM_OF_CAM; i++)
@@ -208,13 +283,35 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         feature_points->channels.push_back(velocity_x_of_point);
         feature_points->channels.push_back(velocity_y_of_point);
 
-        // get feature depth from lidar point cloud
-        pcl::PointCloud<PointType>::Ptr depth_cloud_temp(new pcl::PointCloud<PointType>());
-        mtx_lidar.lock();
-        *depth_cloud_temp = *depthCloud;
-        mtx_lidar.unlock();
+        // getting sparse depth map
+        cv::Mat sparse_depth_map = getDepthMapFromLidarScan(point_cloud_ptr, show_img.clone(), T_cam_lidar, trackerData[0].m_camera);
 
-        sensor_msgs::ChannelFloat32 depth_of_points = depthRegister->get_depth(img_msg->header.stamp, show_img, depth_cloud_temp, trackerData[0].m_camera, feature_points->points);
+        // show sparse depth map
+        /* cv::Mat sparse_depth_map_show; */
+        /* cv::normalize(sparse_depth_map, sparse_depth_map_show, 0, 1, cv::NORM_MINMAX); */
+        /* cv::imshow("sparse depth map", sparse_depth_map_show); */
+        /* cv::waitKey(1); */
+
+        std_msgs::Header depth_map_msg_header;
+        depth_map_msg_header.stamp = img_msg->header.stamp;
+        depth_map_msg_header.frame_id = "left_camera";
+        depth_map_pub.publish(cv_bridge::CvImage(depth_map_msg_header, "32FC1", sparse_depth_map).toImageMsg());
+
+        // wait for dense depth map message
+        while (dense_depth_map.empty()) {
+          ros::spinOnce();
+        }
+
+        sensor_msgs::ChannelFloat32 depth_of_points;
+        for (size_t i = 0 ; i < feature_points->points.size(); i++) {
+          auto u = feature_points->channels[1].values[i];
+          auto v = feature_points->channels[2].values[i];
+          auto row = static_cast<int>(v);
+          auto col = static_cast<int>(u);
+          auto depth = sparse_depth_map.at<float>(row, col);
+          depth_of_points.values.push_back(depth);
+        }
+    
         feature_points->channels.push_back(depth_of_points);
         
         // skip the first image; since no optical speed on frist image
@@ -265,106 +362,16 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 
 void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 {
-    static int lidar_count = -1;
-    if (++lidar_count % (LIDAR_SKIP+1) != 0)
-        return;
 
-    // 0. listen to transform
-    static tf::TransformListener listener;
-    static tf::StampedTransform transform_world_cFLU;   //; T_vinsworld_camera_FLU
-    static tf::StampedTransform transform_cFLU_imu;    //; T_cameraFLU_imu
-    try{
-        //? mod: 监听T_vinsworld_cameraFLU 和 T_cameraFLU_imu
-        listener.waitForTransform("vins_world", "vins_cameraFLU", laser_msg->header.stamp, ros::Duration(0.01));
-        listener.lookupTransform("vins_world", "vins_cameraFLU", laser_msg->header.stamp, transform_world_cFLU);
-        listener.waitForTransform("vins_cameraFLU", "vins_body_imuhz", laser_msg->header.stamp, ros::Duration(0.01));
-        listener.lookupTransform("vins_cameraFLU", "vins_body_imuhz", laser_msg->header.stamp, transform_cFLU_imu);
-    } 
-    catch (tf::TransformException ex){
-        // ROS_ERROR("lidar no tf");
-        return;
-    }
+  // just store the point cloud in a global variable
+  lidar_mtx.lock();
+  pcl::fromROSMsg(*laser_msg, *point_cloud_ptr);
+  lidar_mtx.unlock();
 
-    double xCur, yCur, zCur, rollCur, pitchCur, yawCur;
-    xCur = transform_world_cFLU.getOrigin().x();
-    yCur = transform_world_cFLU.getOrigin().y();
-    zCur = transform_world_cFLU.getOrigin().z();
-    tf::Matrix3x3 m(transform_world_cFLU.getRotation());
+}
 
-    m.getRPY(rollCur, pitchCur, yawCur);
-    //; T_vinswolrd_cameraFLU
-    Eigen::Affine3f transNow = pcl::getTransformation(xCur, yCur, zCur, rollCur, pitchCur, yawCur);
-
-    // 1. convert laser cloud message to pcl
-    pcl::PointCloud<PointType>::Ptr laser_cloud_in(new pcl::PointCloud<PointType>());
-    pcl::fromROSMsg(*laser_msg, *laser_cloud_in);
-
-    // 2. downsample new cloud (save memory)
-    pcl::PointCloud<PointType>::Ptr laser_cloud_in_ds(new pcl::PointCloud<PointType>());
-    static pcl::VoxelGrid<PointType> downSizeFilter;
-    downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
-    downSizeFilter.setInputCloud(laser_cloud_in);
-    downSizeFilter.filter(*laser_cloud_in_ds);
-    *laser_cloud_in = *laser_cloud_in_ds;
-
-    pcl::PointCloud<PointType>::Ptr laser_cloud_offset(new pcl::PointCloud<PointType>());
-    //; T_cFLU_lidar
-    tf::Transform transform_cFLU_lidar = transform_cFLU_imu * Transform_imu_lidar;
-    double roll, pitch, yaw, x, y, z;
-    x = transform_cFLU_lidar.getOrigin().getX();
-    y = transform_cFLU_lidar.getOrigin().getY();
-    z = transform_cFLU_lidar.getOrigin().getZ();
-    tf::Matrix3x3(transform_cFLU_lidar.getRotation()).getRPY(roll, pitch, yaw);
-    Eigen::Affine3f transOffset = pcl::getTransformation(x, y, z, roll, pitch, yaw);
-    //; lidar本体坐标系下的点云，转到相机FLU坐标系下表示
-    pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_offset, transOffset);
-    *laser_cloud_in = *laser_cloud_offset;
-
-    // 4. filter lidar points (only keep points in camera view)
-    //; 根据已经转到相机FLU坐标系下的点云，先排除不在相机FoV内的点云
-    pcl::PointCloud<PointType>::Ptr laser_cloud_in_filter(new pcl::PointCloud<PointType>());
-    for (int i = 0; i < (int)laser_cloud_in->size(); ++i)
-    {
-        PointType p = laser_cloud_in->points[i];
-        if (p.x >= 0 && abs(p.y / p.x) <= 10 && abs(p.z / p.x) <= 10)
-            laser_cloud_in_filter->push_back(p);
-    }
-    *laser_cloud_in = *laser_cloud_in_filter;
-
-    // 5. transform new cloud into global odom frame
-    pcl::PointCloud<PointType>::Ptr laser_cloud_global(new pcl::PointCloud<PointType>());
-    //; cameraFLU坐标系下的点云，转到vinsworld系下表示
-    pcl::transformPointCloud(*laser_cloud_in, *laser_cloud_global, transNow);
-
-    // 6. save new cloud
-    double timeScanCur = laser_msg->header.stamp.toSec();
-    cloudQueue.push_back(*laser_cloud_global);
-    timeQueue.push_back(timeScanCur);
-
-    // 7. pop old cloud
-    while (!timeQueue.empty())
-    {
-        if (timeScanCur - timeQueue.front() > 5.0)
-        {
-            cloudQueue.pop_front();
-            timeQueue.pop_front();
-        } else {
-            break;
-        }
-    }
-
-    std::lock_guard<std::mutex> lock(mtx_lidar);
-    // 8. fuse global cloud
-    depthCloud->clear();
-    for (int i = 0; i < (int)cloudQueue.size(); ++i)
-        *depthCloud += cloudQueue[i];
-
-    // 9. downsample global cloud
-    pcl::PointCloud<PointType>::Ptr depthCloudDS(new pcl::PointCloud<PointType>());
-    downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
-    downSizeFilter.setInputCloud(depthCloud);
-    downSizeFilter.filter(*depthCloudDS);
-    *depthCloud = *depthCloudDS;
+void depth_map_callback(const sensor_msgs::ImageConstPtr& img_msg) {
+  dense_depth_map = cv_bridge::toCvShare(img_msg, "32FC1")->image;
 }
 
 int main(int argc, char **argv)
@@ -385,6 +392,29 @@ int main(int argc, char **argv)
     trackerData[0].setLeftCameraProjectionMatrix(readMatrixFromFile(CAM_NAMES[0], "leftCameraProjectionMatrix"));
     trackerData[0].setRightCameraProjectionMatrix(readMatrixFromFile(CAM_NAMES[0], "rightCameraProjectionMatrix"));
 
+    // reading extrinsics with IMU
+    cv::Mat rotation_matrix = readMatrixFromFile(CAM_NAMES[0], "extrinsicRotation");
+    cv::Mat translation_vector = readMatrixFromFile(CAM_NAMES[0], "extrinsicTranslation");
+    Eigen::Vector3d eigen_translation;
+    cv::cv2eigen(translation_vector, eigen_translation);
+
+    Eigen::Matrix3d eigen_rotation;
+    cv::cv2eigen(rotation_matrix, eigen_rotation);
+
+    Eigen::Matrix4d T_imu_cam = Eigen::Matrix4d::Identity();
+    T_imu_cam.block<3,3>(0,0) = eigen_rotation;
+    T_imu_cam.block<3,1>(0,3) = eigen_translation;
+
+    auto imu_lidar_origin = Transform_imu_lidar.getOrigin();
+    auto imu_lidar_rotation = Transform_imu_lidar.getRotation();
+    Eigen::Matrix4d T_imu_lidar = Eigen::Matrix4d::Identity();
+    T_imu_lidar.block<3,3>(0,0) = Eigen::Quaterniond(imu_lidar_rotation.w(), imu_lidar_rotation.x(), imu_lidar_rotation.y(), imu_lidar_rotation.z()).toRotationMatrix();
+    T_imu_lidar.block<3,1>(0,3) = Eigen::Vector3d(imu_lidar_origin.x(), imu_lidar_origin.y(), imu_lidar_origin.z());
+
+    T_cam_lidar = T_imu_cam.inverse() * T_imu_lidar;
+
+    std::cout << "T_cam_lidar: " << std::endl;
+
     // load fisheye mask to remove features on the boundry
     if(FISHEYE)
     {
@@ -400,15 +430,13 @@ int main(int argc, char **argv)
                 ROS_INFO("load mask success");
         }
     }
-
-    // initialize depthRegister (after readParameters())
-    depthRegister = new DepthRegister(n);
     
     // subscriber to image and lidar
     ROS_WARN("Right image topic: %s", RIGHT_IMAGE_TOPIC.c_str());
     ros::Subscriber sub_img   = n.subscribe(IMAGE_TOPIC,       5,    img_callback);
     ros::Subscriber sub_image_right = n.subscribe(RIGHT_IMAGE_TOPIC, 5, right_img_callback);
     ros::Subscriber sub_lidar = n.subscribe(POINT_CLOUD_TOPIC, 5,    lidar_callback);
+    ros::Subscriber dense_depth_map_sub = n.subscribe(DENSE_DEPTH_MAP_TOPIC, 5, depth_map_callback);
     if (!USE_LIDAR)
         sub_lidar.shutdown();
 
@@ -416,6 +444,7 @@ int main(int argc, char **argv)
     pub_feature = n.advertise<sensor_msgs::PointCloud>(PROJECT_NAME + "/vins/feature/feature",     5);
     pub_match   = n.advertise<sensor_msgs::Image>     (PROJECT_NAME + "/vins/feature/feature_img", 5);
     pub_restart = n.advertise<std_msgs::Bool>         (PROJECT_NAME + "/vins/feature/restart",     5);
+    depth_map_pub = n.advertise<sensor_msgs::Image>   (PROJECT_NAME + "/vins/feature/depth_map",   5);
 
     // two ROS spinners for parallel processing (images and lidar)
     ros::MultiThreadedSpinner spinner(3);

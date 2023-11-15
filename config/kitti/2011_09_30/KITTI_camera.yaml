@@ -5,8 +5,8 @@ project_name: "lvi_sam"
 
 #common parameters
 imu_topic: "/imu_raw"
-image_topic: "/kitti/camera_gray_left/image_raw"
-right_image_topic: "/kitti/camera_gray_right/image_raw"
+image_topic: "/kitti/camera_color_left/image_raw"
+right_image_topic: "/kitti/camera_color_right/image_raw"
 point_cloud_topic: "lvi_sam/lidar/deskew/cloud_deskewed"
 
 # Lidar Params
@@ -56,7 +56,7 @@ extrinsicTranslation: !!opencv-matrix
    rows: 3
    cols: 1
    dt: d
-   data: [1.14389871, -0.31271847,  0.72654605]
+   data: [1.14397089, -0.24640917,  0.72609598]
 
 # Projection matrices for possible stereo triangulation
 leftCameraProjectionMatrix: !!opencv-matrix

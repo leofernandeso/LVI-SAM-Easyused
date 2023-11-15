@@ -184,27 +184,13 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
                 cout << "wrong size " << endl;
 
             // generate new features for the left image
-            std::vector<cv::Point2f> n_pts_left_before_filtering, n_pts_right_before_filtering;
-            cv::goodFeaturesToTrack(forw_left_img, n_pts_left_before_filtering, MAX_CNT - forw_left_pts.size(), 0.01, MIN_DIST, mask);
-            std::cout << "n_pts_left_before_filtering size: " << n_pts_left_before_filtering.size() << std::endl;
+            cv::goodFeaturesToTrack(forw_left_img, new_tracked_points_left, MAX_CNT - forw_left_pts.size(), 0.01, MIN_DIST, mask);
+            std::cout << "n_pts_left_before_filtering size: " << new_tracked_points_left.size() << std::endl;
 
             // find them in the rigt image using optical flow
             vector<uchar> status_right;
             vector<float> err_right;
-            cv::calcOpticalFlowPyrLK(forw_left_img, forw_right_img, n_pts_left_before_filtering, n_pts_right_before_filtering, status_right, err_right, cv::Size(21, 21), 3);
-
-            // add only new points which satisfy the rectified epipolar constraint
-            for (size_t i = 0 ; i < n_pts_right_before_filtering.size() ; ++i) {
-                auto left_pt = n_pts_left_before_filtering[i];
-                auto right_pt = n_pts_right_before_filtering[i];
-                double epipolar_distance = std::abs(left_pt.y - right_pt.y);
-                if (status_right[i] == 1 && inBorder(left_pt) && inBorder(right_pt) && epipolar_distance < 1.0) {
-                    new_tracked_points_left.push_back(left_pt);
-                    new_tracked_points_right.push_back(right_pt);
-                }
-            }
-
-            ROS_INFO("Rejected %lu new points with epipolar constraint", n_pts_left_before_filtering.size() - new_tracked_points_left.size());
+            cv::calcOpticalFlowPyrLK(forw_left_img, forw_right_img, new_tracked_points_left, new_tracked_points_right, status_right, err_right, cv::Size(21, 21), 3);
 
         }
         else {
@@ -284,8 +270,8 @@ void FeatureTracker::rejectWithF()
         reduceVector(cur_undist_right_pts, status);
         reduceVector(track_cnt_right, status);
 
-        ROS_DEBUG("FM ransac: %d -> %lu: %f", size_a, forw_left_pts.size(), 1.0 * forw_left_pts.size() / size_a);
-        ROS_DEBUG("FM ransac costs: %fms", t_f.toc());
+        ROS_INFO("FM ransac: %d -> %lu: %f", size_a, forw_left_pts.size(), 1.0 * forw_left_pts.size() / size_a);
+        ROS_INFO("FM ransac costs: %fms", t_f.toc());
     }
 }
 
