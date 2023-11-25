@@ -128,7 +128,7 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
 
         // track previous features from both images
         cv::calcOpticalFlowPyrLK(cur_left_img, forw_left_img, cur_left_pts, forw_left_pts, status_left, err_left, cv::Size(21, 21), 3);
-        cv::calcOpticalFlowPyrLK(cur_right_img, forw_right_img, cur_right_pts, forw_right_pts, status_right, err_right, cv::Size(21, 21), 3);
+        /* cv::calcOpticalFlowPyrLK(cur_right_img, forw_right_img, cur_right_pts, forw_right_pts, status_right, err_right, cv::Size(21, 21), 3); */
 
         for (size_t i = 0; i < forw_left_pts.size(); i++) {
             if (status_left[i] == 1 && !inBorder(forw_left_pts[i])) {
@@ -144,12 +144,12 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
         reduceVector(track_cnt_left, status_left);
 
         // remove features that weren't tracked in the left image
-        reduceVector(prev_right_pts, status_left);
-        reduceVector(cur_right_pts, status_left);
-        reduceVector(forw_right_pts, status_left);
-        reduceVector(ids_right, status_left);
-        reduceVector(cur_undist_right_pts, status_left);
-        reduceVector(track_cnt_right, status_left);
+        /* reduceVector(prev_right_pts, status_left); */
+        /* reduceVector(cur_right_pts, status_left); */
+        /* reduceVector(forw_right_pts, status_left); */
+        /* reduceVector(ids_right, status_left); */
+        /* reduceVector(cur_undist_right_pts, status_left); */
+        /* reduceVector(track_cnt_right, status_left); */
 
         ROS_DEBUG("temporal optical flow costs: %fms", t_o.toc());
     }
@@ -157,8 +157,8 @@ void FeatureTracker::readImage(const cv::Mat &left_img, const cv::Mat& right_img
     for (auto &n : track_cnt_left)
         n++;
 
-    for (auto& n : track_cnt_right)
-        n++;
+    /* for (auto& n : track_cnt_right) */
+    /*     n++; */
 
     if (PUB_THIS_FRAME)
     {
@@ -263,12 +263,12 @@ void FeatureTracker::rejectWithF()
         reduceVector(track_cnt_left, status);
 
         // also remove from the right image feature set
-        reduceVector(prev_right_pts, status);
-        reduceVector(cur_right_pts, status);
-        reduceVector(forw_right_pts, status);
-        reduceVector(ids_right, status);
-        reduceVector(cur_undist_right_pts, status);
-        reduceVector(track_cnt_right, status);
+        /* reduceVector(prev_right_pts, status); */
+        /* reduceVector(cur_right_pts, status); */
+        /* reduceVector(forw_right_pts, status); */
+        /* reduceVector(ids_right, status); */
+        /* reduceVector(cur_undist_right_pts, status); */
+        /* reduceVector(track_cnt_right, status); */
 
         ROS_INFO("FM ransac: %d -> %lu: %f", size_a, forw_left_pts.size(), 1.0 * forw_left_pts.size() / size_a);
         ROS_INFO("FM ransac costs: %fms", t_f.toc());

@@ -13,6 +13,7 @@ const std::string DENSE_DEPTH_MAP_TOPIC = "/dense_depth_map";
 
 // mtx lock for two threads
 std::mutex lidar_mtx;
+std::mutex depth_map_mtx;
 
 // global variable for saving the point cloud
 pcl::PointCloud<PointType>::Ptr point_cloud_ptr(new pcl::PointCloud<PointType>());
@@ -286,21 +287,14 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         // getting sparse depth map
         cv::Mat sparse_depth_map = getDepthMapFromLidarScan(point_cloud_ptr, show_img.clone(), T_cam_lidar, trackerData[0].m_camera);
 
-        // show sparse depth map
-        /* cv::Mat sparse_depth_map_show; */
-        /* cv::normalize(sparse_depth_map, sparse_depth_map_show, 0, 1, cv::NORM_MINMAX); */
-        /* cv::imshow("sparse depth map", sparse_depth_map_show); */
-        /* cv::waitKey(1); */
-
         std_msgs::Header depth_map_msg_header;
         depth_map_msg_header.stamp = img_msg->header.stamp;
         depth_map_msg_header.frame_id = "left_camera";
         depth_map_pub.publish(cv_bridge::CvImage(depth_map_msg_header, "32FC1", sparse_depth_map).toImageMsg());
 
-        // wait for dense depth map message
-        while (dense_depth_map.empty()) {
-          ros::spinOnce();
-        }
+        // wait for dense depth map
+        boost::shared_ptr<const sensor_msgs::Image> dense_depth_map_msg = ros::topic::waitForMessage<sensor_msgs::Image>(DENSE_DEPTH_MAP_TOPIC);
+        cv::Mat dense_depth_map = cv_bridge::toCvShare(dense_depth_map_msg, "32FC1")->image;
 
         sensor_msgs::ChannelFloat32 depth_of_points;
         for (size_t i = 0 ; i < feature_points->points.size(); i++) {
@@ -308,10 +302,9 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
           auto v = feature_points->channels[2].values[i];
           auto row = static_cast<int>(v);
           auto col = static_cast<int>(u);
-          auto depth = sparse_depth_map.at<float>(row, col);
+          auto depth = dense_depth_map.at<float>(row, col);
           depth_of_points.values.push_back(depth);
         }
-    
         feature_points->channels.push_back(depth_of_points);
         
         // skip the first image; since no optical speed on frist image
@@ -371,7 +364,9 @@ void lidar_callback(const sensor_msgs::PointCloud2ConstPtr& laser_msg)
 }
 
 void depth_map_callback(const sensor_msgs::ImageConstPtr& img_msg) {
+  depth_map_mtx.lock();
   dense_depth_map = cv_bridge::toCvShare(img_msg, "32FC1")->image;
+  depth_map_mtx.unlock();
 }
 
 int main(int argc, char **argv)
@@ -445,6 +440,10 @@ int main(int argc, char **argv)
     pub_match   = n.advertise<sensor_msgs::Image>     (PROJECT_NAME + "/vins/feature/feature_img", 5);
     pub_restart = n.advertise<std_msgs::Bool>         (PROJECT_NAME + "/vins/feature/restart",     5);
     depth_map_pub = n.advertise<sensor_msgs::Image>   (PROJECT_NAME + "/vins/feature/depth_map",   5);
+
+    // initialize dense depth map with missing values at first
+    dense_depth_map = cv::Mat::ones(ROW, COL, CV_32FC1) * -1.;
+    
 
     // two ROS spinners for parallel processing (images and lidar)
     ros::MultiThreadedSpinner spinner(3);
